@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NEURAL DUEL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="crt-shell" class="crt-on">
+    <div class="scanlines"></div>
+    <div class="vignette"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <h1>NEURAL&nbsp;DUEL</h1>
+        <p class="tagline">// opponent cognition: Q-LEARNING — not scripted</p>
+      </div>
+      <div class="topbar-btns">
+        <button id="btn-sound-toggle" class="btn btn-ghost btn-small">SND: ON</button>
+      </div>
+    </header>
+
+    <main id="app-root">
+
+      <!-- MENU -->
+      <section id="screen-menu" class="screen">
+        <div class="menu-card">
+          <h2 class="glow">NEURAL DUEL</h2>
+          <p class="sub">An opponent that learns to read you, one round at a time.</p>
+          <button id="btn-start" class="btn btn-primary">START MATCH</button>
+          <button id="btn-tour" class="btn btn-ghost">HOW TO PLAY</button>
+          <button id="btn-about" class="btn btn-ghost">ABOUT THE AI</button>
+        </div>
+      </section>
+
+      <!-- ABOUT -->
+      <section id="screen-about" class="screen hidden">
+        <div class="menu-card wide">
+          <h2>ABOUT THE AI</h2>
+          <div class="about-body">
+            <p>The CPU fighter is controlled by <b>tabular Q-learning</b>, not a fixed script.</p>
+            <p>Every ~220ms it reads a discretized <b>state</b> — distance to you, both health bands, grounded/airborne, your current action — and picks a <b>move</b>.</p>
+            <p>Landing a hit rewards it (+10). Taking one punishes it (-10). Winning or losing a round gives a large terminal reward (±50). It updates its Q-table live, from your actual fights — no pre-training.</p>
+            <p>Its sprite glitches early on because it's still exploring at random (high ε). As ε decays and it commits to what works, the glitch clears — you can watch it learn.</p>
+          </div>
+          <button class="btn btn-ghost back-btn" data-back="screen-menu">BACK</button>
+        </div>
+      </section>
+
+      <!-- ONBOARDING TOUR -->
+      <section id="screen-tour" class="screen hidden">
+        <div class="tour-stage">
+          <canvas id="tour-canvas" width="900" height="480"></canvas>
+          <div class="tour-box">
+            <div class="tour-head">
+              <span id="tour-title">TITLE</span>
+              <span id="tour-count">1/5</span>
+            </div>
+            <p id="tour-text">...</p>
+            <div class="tour-actions">
+              <a href="#" id="tour-skip" class="skip-link">SKIP TOUR</a>
+              <div class="tour-buttons">
+                <button id="tour-back" class="btn btn-ghost btn-small">BACK</button>
+                <button id="tour-next" class="btn btn-primary btn-small">NEXT</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LOADOUT -->
+      <section id="screen-loadout" class="screen hidden">
+        <div class="loadout-wrap">
+          <h2>CHOOSE YOUR LOADOUT</h2>
+
+          <div class="loadout-section">
+            <h3>WEAPON</h3>
+            <div id="weapon-cards" class="card-row"></div>
+          </div>
+
+          <div class="loadout-section">
+            <h3>DEFENSE</h3>
+            <div id="shield-cards" class="card-row"></div>
+          </div>
+
+          <div class="loadout-section">
+            <h3>STRENGTHS <span class="points-left">(<span id="points-left">0</span> points left)</span></h3>
+            <div id="stat-rows" class="stat-alloc"></div>
+          </div>
+
+          <button id="btn-fight" class="btn btn-primary">FIGHT!</button>
+        </div>
+      </section>
+
+      <!-- GAME -->
+      <section id="screen-game" class="screen hidden">
+        <div class="layout">
+          <div class="stage-wrap">
+            <div class="loadout-banner">
+              <span id="banner-player">YOU: –</span>
+              <span id="banner-cpu">CPU: –</span>
+            </div>
+            <canvas id="stage" width="900" height="480"></canvas>
+
+            <div class="control-pad">
+              <div class="pad-group">
+                <button class="pad-btn move wide" data-hold="left">◀ LEFT</button>
+                <button class="pad-btn move wide" data-hold="right">RIGHT ▶</button>
+                <button class="pad-btn move" data-tap="jump">JUMP</button>
+              </div>
+              <div class="pad-group">
+                <button class="pad-btn defend" data-tap="dash">DASH</button>
+                <button class="pad-btn defend" data-hold="block">BLOCK</button>
+                <button class="pad-btn attack" data-tap="attack">LIGHT</button>
+                <button class="pad-btn heavy" data-tap="heavy">HEAVY</button>
+                <button class="pad-btn special wide" data-tap="special">SPECIAL</button>
+              </div>
+            </div>
+          </div>
+
+          <aside class="hud">
+            <div class="hud-block">
+              <h3>CONTROLS</h3>
+              <div class="controls-legend">← → move · ↑ jump · Space attack<br>(extra: K heavy · Shift block (hold) · Ctrl dash · E special — or just use the buttons below the arena)</div>
+            </div>
+
+            <div class="hud-block">
+              <h3>AI BRAIN</h3>
+              <div class="stat-row"><span>Exploration (ε)</span><b id="stat-epsilon">–</b></div>
+              <div class="stat-row"><span>States learned</span><b id="stat-tablesize">–</b></div>
+              <div class="stat-row"><span>Q-updates</span><b id="stat-updates">–</b></div>
+              <div class="stat-row"><span>Avg reward / round</span><b id="stat-avgreward">–</b></div>
+              <div class="stat-row"><span>Recent rounds</span><b id="stat-rounds">–</b></div>
+              <canvas id="spark" width="230" height="50"></canvas>
+              <p class="hint">Reward per round, most recent → right.</p>
+            </div>
+
+            <button id="btn-reset-brain" class="btn btn-ghost btn-small">RESET AI BRAIN</button>
+            <button id="btn-new-match" class="btn btn-ghost btn-small">NEW MATCH</button>
+            <button id="btn-menu" class="btn btn-ghost btn-small">MAIN MENU</button>
+          </aside>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
