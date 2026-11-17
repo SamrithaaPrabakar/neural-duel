@@ -300,14 +300,22 @@ const OUTLINE_DIRS = [
   [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7],
 ];
 
-// A real illustrated sprite for the idle stance (art/fighter/idle.png) —
-// a flat black silhouette on a white background, alpha-keyed by luminance
-// at build time so white becomes transparent. Other poses stay on the
-// procedural rig above until more pose art exists; this is a deliberate,
-// visible seam for now, not a bug.
-const IDLE_SPRITE_SRC = "art/fighter/idle.png";
-const idleSprite = new Image();
-idleSprite.src = IDLE_SPRITE_SRC;
+// Real illustrated sprites, one per pose that has art so far — flat black
+// silhouettes on a white background, alpha-keyed by luminance at build
+// time so white becomes transparent (see the processing step that made
+// these files; the source webp isn't checked in). Poses with no entry here
+// stay on the procedural rig above until matching art exists for them —
+// a deliberate, visible seam for now, not a bug.
+const POSE_SPRITE_SRC = {
+  idle: "art/fighter/idle.png",
+  attack: "art/fighter/attack.png",
+};
+const poseSprites = {};
+for (const [key, src] of Object.entries(POSE_SPRITE_SRC)) {
+  const img = new Image();
+  img.src = src;
+  poseSprites[key] = img;
+}
 
 let rimCanvas = null, rimCtx = null;
 let flashCanvas = null, flashCtx2 = null;
@@ -360,8 +368,8 @@ function drawSilhouetteSource(ctx, src, srcW, srcH, destX, destY, destW, destH, 
 // jump in scale.
 const CHAR_H = (HEAD_R * 2 + NECK + TORSO_LEN + THIGH + SHIN) * RENDER_SCALE;
 
-function drawIdleSprite(ctx, fighter, flashing, isCpu, glitchIntensity) {
-  const srcW = idleSprite.naturalWidth, srcH = idleSprite.naturalHeight;
+function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity) {
+  const srcW = img.naturalWidth, srcH = img.naturalHeight;
   const destH = CHAR_H;
   const destW = destH * (srcW / srcH);
 
@@ -373,7 +381,7 @@ function drawIdleSprite(ctx, fighter, flashing, isCpu, glitchIntensity) {
 
   const destX = cx - destW / 2;
   const destY = fighter.y - destH;
-  drawSilhouetteSource(ctx, idleSprite, srcW, srcH, destX, destY, destW, destH, flashing);
+  drawSilhouetteSource(ctx, img, srcW, srcH, destX, destY, destW, destH, flashing);
 
   ctx.restore();
 
@@ -386,11 +394,12 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const poseKey = poseFor(fighter);
   const flashing = fighter.flashTimer > 0;
 
-  // Idle uses the real illustrated sprite once it's loaded; every other
-  // pose still uses the procedural rig until more pose art exists — a
+  // A pose with real illustrated art uses it once loaded; every other pose
+  // still uses the procedural rig until matching art exists for it — a
   // deliberate, visible seam for now, not a bug.
-  if (poseKey === "idle" && idleSprite.complete && idleSprite.naturalWidth > 0) {
-    drawIdleSprite(ctx, fighter, flashing, isCpu, glitchIntensity);
+  const sprite = poseSprites[poseKey];
+  if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity);
     return;
   }
 
