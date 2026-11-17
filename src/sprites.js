@@ -311,6 +311,10 @@ const POSE_SPRITE_SRC = {
   attack: "art/fighter/attack.png",
   heavy: "art/fighter/heavy.png",
   block: "art/fighter/block.png",
+  special: "art/fighter/special.png",
+  dash: "art/fighter/dash.png",
+  hitstun: "art/fighter/hitstun.png",
+  jump: "art/fighter/jump.png",
 };
 const poseSprites = {};
 for (const [key, src] of Object.entries(POSE_SPRITE_SRC)) {
@@ -370,7 +374,7 @@ function drawSilhouetteSource(ctx, src, srcW, srcH, destX, destY, destW, destH, 
 // jump in scale.
 const CHAR_H = (HEAD_R * 2 + NECK + TORSO_LEN + THIGH + SHIN) * RENDER_SCALE;
 
-function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity) {
+function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity, poseKey, weaponColor) {
   const srcW = img.naturalWidth, srcH = img.naturalHeight;
   const destH = CHAR_H;
   const destW = destH * (srcW / srcH);
@@ -383,6 +387,19 @@ function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity) {
 
   const destX = cx - destW / 2;
   const destY = fighter.y - destH;
+
+  // special-move aura is a brief VFX, not part of the body — drawn behind
+  // the sprite the same way it's drawn behind the procedural rig
+  if (poseKey === "special") {
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = weaponColor;
+    ctx.beginPath();
+    ctx.arc(cx, destY + destH * 0.45, 70, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   drawSilhouetteSource(ctx, img, srcW, srcH, destX, destY, destW, destH, flashing);
 
   ctx.restore();
@@ -401,7 +418,8 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   // deliberate, visible seam for now, not a bug.
   const sprite = poseSprites[poseKey];
   if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity);
+    const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
+    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity, poseKey, weaponColor);
     return;
   }
 
