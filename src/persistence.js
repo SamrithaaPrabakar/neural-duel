@@ -12,6 +12,10 @@ export function emptyProgress() {
   return { highestUnlockedLevel: 1 };
 }
 
+export function emptyWallet() {
+  return { coins: 0, bonusStatPoints: 0 };
+}
+
 export function loadSave() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -24,19 +28,23 @@ export function loadSave() {
     const progress = parsed.progress && typeof parsed.progress === "object"
       ? { ...emptyProgress(), ...parsed.progress }
       : emptyProgress();
+    const wallet = parsed.wallet && typeof parsed.wallet === "object"
+      ? { ...emptyWallet(), ...parsed.wallet }
+      : emptyWallet();
     return {
       qlearner: parsed.qlearner && typeof parsed.qlearner === "object" ? parsed.qlearner : null,
       lifetime,
       progress,
+      wallet,
     };
   } catch {
     return null;
   }
 }
 
-export function writeSave({ qlearner, lifetime, progress }) {
+export function writeSave({ qlearner, lifetime, progress, wallet }) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, qlearner, lifetime, progress }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, qlearner, lifetime, progress, wallet }));
     return true;
   } catch {
     return false;

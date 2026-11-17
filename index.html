@@ -34,6 +34,9 @@
         <p class="tagline">// opponent cognition: Q-LEARNING — not scripted</p>
       </div>
       <div class="topbar-btns">
+        <div id="coin-badge" class="coin-badge" title="Coins">
+          <span class="coin-icon">&#129689;</span><span id="coin-count">0</span>
+        </div>
         <button id="btn-sound-toggle" class="btn btn-ghost btn-small">SND: ON</button>
       </div>
     </header>
@@ -46,6 +49,7 @@
           <h2 class="glow">NEURAL DUEL</h2>
           <p class="sub">An opponent that learns to read you, one round at a time.</p>
           <button id="btn-start" class="btn btn-primary">START MATCH</button>
+          <button id="btn-powerups" class="btn btn-ghost">POWER-UPS</button>
           <button id="btn-tour" class="btn btn-ghost">HOW TO PLAY</button>
           <button id="btn-about" class="btn btn-ghost">ABOUT THE AI</button>
           <button id="btn-settings" class="btn btn-ghost">SETTINGS</button>
@@ -79,8 +83,23 @@
             <div class="stat-row"><span>Recent matches</span><b id="settings-history">–</b></div>
 
             <div class="stat-row"><span>Campaign</span><b id="settings-campaign">–</b></div>
+            <div class="stat-row"><span>Coins</span><b id="settings-coins">–</b></div>
 
             <button id="btn-settings-clear" class="btn btn-ghost">CLEAR ALL PROGRESS</button>
+          </div>
+          <button class="btn btn-ghost back-btn" data-back="screen-menu">BACK</button>
+        </div>
+      </section>
+
+      <!-- POWER-UPS -->
+      <section id="screen-powerups" class="screen hidden">
+        <div class="menu-card wide">
+          <h2>POWER-UPS</h2>
+          <div class="about-body">
+            <p>Win matches to earn coins. Spend them here on permanent extra stat points you can allocate in every loadout from now on.</p>
+            <div class="stat-row"><span>Your coins</span><b id="powerup-coins">0</b></div>
+            <div class="stat-row"><span>Bonus stat points owned</span><b id="powerup-bonus">0</b></div>
+            <button id="btn-powerup-train" class="btn btn-primary">TRAIN (+1 STAT POINT)</button>
           </div>
           <button class="btn btn-ghost back-btn" data-back="screen-menu">BACK</button>
         </div>

@@ -8,7 +8,7 @@ import {
   defaultStats, statsPointsUsed, deriveCombatProfile, randomLoadout,
 } from "./loadout.js";
 import { sfx, setMuted, isMuted } from "./audio.js";
-import { loadSave, writeSave, clearSave, emptyLifetime, emptyProgress } from "./persistence.js";
+import { loadSave, writeSave, clearSave, emptyLifetime, emptyProgress, emptyWallet } from "./persistence.js";
 import {
   TOTAL_LEVELS, arenaForLevel, chapterProgress, levelEpsilonClamp, levelCpuBonusPoints, loadArenaImage,
 } from "./arenas.js";
@@ -26,10 +26,20 @@ const learner = new QLearner(ACTIONS);
 const savedGame = loadSave();
 let lifetime = savedGame ? savedGame.lifetime : emptyLifetime();
 let progress = savedGame ? savedGame.progress : emptyProgress();
+let wallet = savedGame ? savedGame.wallet : emptyWallet();
 if (savedGame && savedGame.qlearner) learner.importState(savedGame.qlearner);
 
 function persistProgress() {
-  writeSave({ qlearner: learner.exportState(), lifetime, progress });
+  writeSave({ qlearner: learner.exportState(), lifetime, progress, wallet });
+}
+
+function coinsForLevel(level) {
+  return 20 + level * 4;
+}
+
+function syncCoinBadge() {
+  const el = document.getElementById("coin-count");
+  if (el) el.textContent = wallet.coins;
 }
 
 let player = null;
@@ -97,11 +107,13 @@ document.getElementById("btn-settings-clear").onclick = () => {
   learner.reset();
   lifetime = emptyLifetime();
   progress = emptyProgress();
+  wallet = emptyWallet();
   selectedLevel = 1;
   rewardHistory = [];
   totalReward = 0;
   clearSave();
   renderSettingsScreen();
+  syncCoinBadge();
 };
 
 function renderSettingsScreen() {
@@ -111,7 +123,38 @@ function renderSettingsScreen() {
   document.getElementById("settings-matches").textContent = lifetime.matches;
   document.getElementById("settings-history").textContent = lifetime.history.join(" ") || "–";
   document.getElementById("settings-campaign").textContent = `Level ${progress.highestUnlockedLevel} / ${TOTAL_LEVELS} unlocked`;
+  document.getElementById("settings-coins").textContent = `${wallet.coins} (bonus stat points: ${wallet.bonusStatPoints})`;
 }
+
+// ============ POWER-UPS ============
+function powerupCost() {
+  return 50 + wallet.bonusStatPoints * 30;
+}
+
+function renderPowerupsScreen() {
+  document.getElementById("powerup-coins").textContent = wallet.coins;
+  document.getElementById("powerup-bonus").textContent = wallet.bonusStatPoints;
+  const cost = powerupCost();
+  const btn = document.getElementById("btn-powerup-train");
+  btn.textContent = `TRAIN (+1 STAT POINT) — ${cost} COINS`;
+  btn.disabled = wallet.coins < cost;
+}
+
+document.getElementById("btn-powerups").onclick = () => {
+  clickSound();
+  renderPowerupsScreen();
+  showScreen("screen-powerups");
+};
+document.getElementById("btn-powerup-train").onclick = () => {
+  const cost = powerupCost();
+  if (wallet.coins < cost) return;
+  clickSound();
+  wallet.coins -= cost;
+  wallet.bonusStatPoints += 1;
+  syncCoinBadge();
+  persistProgress();
+  renderPowerupsScreen();
+};
 
 // ============ LEVEL SELECT ============
 function openLevelSelect() {
@@ -180,8 +223,9 @@ function renderLoadoutScreen() {
     b.onclick = () => { clickSound(); playerLoadout.shield = b.dataset.shield; renderLoadoutScreen(); };
   });
 
+  const effectivePool = STAT_POOL + wallet.bonusStatPoints;
   const used = statsPointsUsed(playerLoadout.stats);
-  const left = STAT_POOL - used;
+  const left = effectivePool - used;
   document.getElementById("points-left").textContent = left;
 
   const statMeta = {
@@ -209,7 +253,7 @@ function renderLoadoutScreen() {
       const cur = playerLoadout.stats[key];
       const nextVal = cur + dir;
       if (nextVal < STAT_MIN || nextVal > STAT_MAX) return;
-      if (dir > 0 && statsPointsUsed(playerLoadout.stats) >= STAT_POOL) return;
+      if (dir > 0 && statsPointsUsed(playerLoadout.stats) >= STAT_POOL + wallet.bonusStatPoints) return;
       clickSound();
       playerLoadout.stats[key] = nextVal;
       renderLoadoutScreen();
@@ -480,9 +524,68 @@ function endRound(playerWon) {
     } else if (playerWonMatch && progress.highestUnlockedLevel >= TOTAL_LEVELS && selectedLevel === TOTAL_LEVELS) {
       roundOverText = "CAMPAIGN COMPLETE!";
     }
+
+    if (playerWonMatch) triggerCoinBurst(coinsForLevel(selectedLevel));
   }
 
   persistProgress();
+}
+
+// Coins "pop" out of the arena and fly, one by one, into the coin badge in
+// the topbar — each landing bumps the counter and gives it a little pulse,
+// rather than the total just silently changing.
+function triggerCoinBurst(totalCoins) {
+  const stageEl = document.getElementById("stage");
+  const badgeEl = document.getElementById("coin-badge");
+  if (!stageEl || !badgeEl) { wallet.coins += totalCoins; syncCoinBadge(); return; }
+
+  const fromRect = stageEl.getBoundingClientRect();
+  const toRect = badgeEl.getBoundingClientRect();
+  const coinCount = Math.min(10, Math.max(3, Math.round(totalCoins / 6)));
+  const perCoin = totalCoins / coinCount;
+  let collected = 0;
+
+  for (let i = 0; i < coinCount; i++) {
+    setTimeout(() => {
+      const el = document.createElement("div");
+      el.className = "coin-fx";
+      const startX = fromRect.left + fromRect.width / 2 + (Math.random() - 0.5) * 60;
+      const startY = fromRect.top + fromRect.height / 2 + (Math.random() - 0.5) * 40;
+      el.style.left = `${startX}px`;
+      el.style.top = `${startY}px`;
+      document.body.appendChild(el);
+
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const dx = toRect.left + toRect.width / 2 - startX;
+        const dy = toRect.top + toRect.height / 2 - startY;
+        el.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.35)`;
+        el.style.opacity = "0.15";
+      }));
+
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        el.remove();
+        wallet.coins += Math.round(perCoin);
+        syncCoinBadge();
+        pulseCoinBadge();
+        sfx.menuClick();
+        collected++;
+        if (collected === coinCount) persistProgress();
+      };
+      el.addEventListener("transitionend", finish, { once: true });
+      setTimeout(finish, 900);
+    }, i * 90);
+  }
+}
+
+function pulseCoinBadge() {
+  const badgeEl = document.getElementById("coin-badge");
+  if (!badgeEl) return;
+  badgeEl.classList.remove("pulse");
+  void badgeEl.offsetWidth;
+  badgeEl.classList.add("pulse");
 }
 
 function gainMeter(fighter, amount) {
@@ -935,6 +1038,7 @@ document.getElementById("btn-new-match").onclick = () => {
 };
 
 renderLoadoutScreen();
+syncCoinBadge();
 showScreen("screen-menu");
 requestAnimationFrame(loop);
 

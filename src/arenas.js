@@ -7,9 +7,9 @@
 export const TOTAL_LEVELS = 30;
 
 export const ARENAS = [
-  { id: "japan", name: "Autumn Shrine", theme: "Japan", bg: "art/arenas/japan.jpg" },
   { id: "china", name: "Imperial Palace", theme: "China", bg: "art/arenas/china.jpg" },
   { id: "greece", name: "Ruins of Olympus", theme: "Greece", bg: "art/arenas/greece.jpg" },
+  { id: "japan", name: "Autumn Shrine", theme: "Japan", bg: "art/arenas/japan.jpg" },
 ];
 
 const LEVELS_PER_CHAPTER = Math.ceil(TOTAL_LEVELS / ARENAS.length);
