@@ -8,6 +8,7 @@ import {
   defaultStats, statsPointsUsed, deriveCombatProfile, randomLoadout,
 } from "./loadout.js";
 import { sfx, setMuted, isMuted } from "./audio.js";
+import { loadSave, writeSave, clearSave, emptyLifetime } from "./persistence.js";
 
 const ACTIONS = ["moveLeft", "moveRight", "jump", "attack", "heavy", "block", "dash", "special", "idle"];
 const DECISION_INTERVAL = 220;
@@ -18,6 +19,14 @@ const ctx = canvas.getContext("2d");
 
 const particles = new Particles();
 const learner = new QLearner(ACTIONS);
+
+const savedGame = loadSave();
+let lifetime = savedGame ? savedGame.lifetime : emptyLifetime();
+if (savedGame && savedGame.qlearner) learner.importState(savedGame.qlearner);
+
+function persistProgress() {
+  writeSave({ qlearner: learner.exportState(), lifetime });
+}
 
 let player = null;
 let cpu = null;
@@ -363,8 +372,20 @@ function endRound(playerWon) {
 
   if (wins.player >= ROUNDS_TO_WIN || wins.cpu >= ROUNDS_TO_WIN) {
     matchOver = true;
-    roundOverText = wins.player >= ROUNDS_TO_WIN ? "YOU WIN THE MATCH" : "CPU WINS THE MATCH";
+    const playerWonMatch = wins.player >= ROUNDS_TO_WIN;
+    roundOverText = playerWonMatch ? "YOU WIN THE MATCH" : "CPU WINS THE MATCH";
+    lifetime.matches++;
+    if (playerWonMatch) {
+      lifetime.wins++;
+      lifetime.currentStreak++;
+      lifetime.bestStreak = Math.max(lifetime.bestStreak, lifetime.currentStreak);
+    } else {
+      lifetime.losses++;
+      lifetime.currentStreak = 0;
+    }
   }
+
+  persistProgress();
 }
 
 function gainMeter(fighter, amount) {
@@ -618,6 +639,8 @@ function renderHud() {
   document.getElementById("stat-updates").textContent = learner.updateCount;
   document.getElementById("stat-avgreward").textContent = avgRecent;
   document.getElementById("stat-rounds").textContent = roundOutcomes.join(" ") || "–";
+  document.getElementById("stat-lifetime").textContent =
+    `${lifetime.wins}W-${lifetime.losses}L (best streak ${lifetime.bestStreak})`;
 
   const sparkCanvas = document.getElementById("spark");
   const sctx = sparkCanvas.getContext("2d");
@@ -658,9 +681,24 @@ document.getElementById("btn-reset-brain").onclick = () => {
   learner.reset();
   rewardHistory = [];
   totalReward = 0;
+  persistProgress();
 };
 document.getElementById("btn-new-match").onclick = () => { clickSound(); openLoadout(); };
+document.getElementById("btn-clear-progress").onclick = () => {
+  clickSound();
+  if (!confirm("Clear all saved progress? This resets the AI's learning and your lifetime win/loss record. This can't be undone.")) return;
+  learner.reset();
+  lifetime = emptyLifetime();
+  rewardHistory = [];
+  totalReward = 0;
+  clearSave();
+};
 
 renderLoadoutScreen();
 showScreen("screen-menu");
 requestAnimationFrame(loop);
+
+window.addEventListener("beforeunload", persistProgress);
+window.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") persistProgress();
+});

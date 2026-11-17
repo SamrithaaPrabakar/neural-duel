@@ -66,4 +66,17 @@ export class QLearner {
   get tableSize() {
     return Object.keys(this.q).length;
   }
+
+  // Plain-object snapshot for persistence — safe to JSON.stringify directly.
+  exportState() {
+    return { q: this.q, epsilon: this.epsilon, updateCount: this.updateCount };
+  }
+
+  // Restores a snapshot from exportState(), tolerating a missing/malformed one.
+  importState(state) {
+    if (!state || typeof state !== "object") return;
+    if (state.q && typeof state.q === "object") this.q = state.q;
+    if (typeof state.epsilon === "number") this.epsilon = state.epsilon;
+    if (typeof state.updateCount === "number") this.updateCount = state.updateCount;
+  }
 }
