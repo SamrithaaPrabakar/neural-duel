@@ -281,7 +281,7 @@ body {
   gap: 10px;
   flex-wrap: wrap;
 }
-.pad-group { display: flex; gap: 8px; }
+.pad-group { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .pad-btn {
   min-width: 52px;
   padding: 12px 10px;
