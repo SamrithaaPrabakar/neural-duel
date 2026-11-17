@@ -4,21 +4,20 @@
 // pixel-grid bitmap. That's what lets a heavy attack read as an actual
 // flying kick instead of a palette-swapped idle pose.
 //
-// Each segment is a gently bulging wedge (not a straight-edged taper, which
-// reads as a pipe/tube), and every joint shares an exact width with the
-// segment on the other side of it plus a cap circle of that same radius —
-// so two segments blend into one continuous body with no notch at the
-// bend, the thing that was making the rig read as assembled parts rather
-// than a human.
-//
-// The fighters themselves are a flat, near-black cutout with no glow or
-// color on the body or weapon — same convention as a real backlit side-on
-// fighting silhouette: you read the two fighters by position and pose, not
-// by a neon outline. Color lives in the HUD (portraits, health bars) and in
-// brief VFX (special-move aura, hit flash), never on the body itself.
+// The whole body is built on an OFFSCREEN canvas, always facing right, at a
+// fixed local origin — then blitted onto the real canvas scaled up and
+// mirrored for facing. Building it offscreen first is what makes the rim
+// light possible: the dilated-silhouette trick below draws the whole body's
+// alpha shape eight times, offset by a pixel in every direction, in a light
+// color underneath the black body — so there's one continuous light edge
+// around the OUTSIDE of the whole figure, not a separate outline around
+// every individual limb (which is what was reading as assembled parts
+// rather than a person). It also guarantees the fighter stays visible even
+// against a very dark patch of background.
 
-const SILHOUETTE = "#050506";
+const SILHOUETTE = "#06060a";
 const FLASH_WHITE = "#ffffff";
+const RIM_LIGHT = "rgba(255, 238, 200, 0.95)";
 
 const HEAD_R = 9;
 const NECK = 4;
@@ -46,6 +45,14 @@ const FOREARM_W = [ELBOW_W, WRIST_W];
 const THIGH_W = [HIP_W, KNEE_W];
 const SHIN_W = [KNEE_W, ANKLE_W];
 const TORSO_W = [HIP_W, NECK_W + 20]; // hip -> shoulder
+
+// Local offscreen canvas the body is always built on, right-facing, before
+// being scaled up and mirrored onto the real canvas.
+const RENDER_SCALE = 1.7;
+const OFF_W = 150;
+const OFF_H = 170;
+const ORIGIN_X = OFF_W / 2;
+const ORIGIN_Y = OFF_H - 20; // 20px of slack below the feet
 
 // Angles are radians from straight-down, rotating toward +x (the facing
 // direction) for positive values. F = front limb (weapon side), B = back
@@ -102,8 +109,6 @@ function limb(ctx, p0, p1, w0, w1, bulge = 0.3) {
   const h0 = w0 / 2, h1 = w1 / 2;
   const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
   const straightMid = (h0 + h1) / 2;
-  // a quadratic curve's peak deviates from the chord midpoint by half the
-  // control point's own offset, so double the desired extra bow here
   const cOut = straightMid + straightMid * bulge * 2;
   ctx.beginPath();
   ctx.moveTo(p0.x + nx * h0, p0.y + ny * h0);
@@ -141,17 +146,11 @@ function limbChain(ctx, p0, p1, p2, w, bulge) {
   cap(ctx, p2, w[1][1]);
 }
 
-// Weapon and shield are drawn in the same flat silhouette tone as the body
-// — like the body, they read by shape, not by color — with a hairline
-// translucent edge so a blade or shield rim still separates visually from
-// whatever's directly behind it.
-function drawWeapon(ctx, hand, armAngle, weaponId) {
+function drawWeapon(ctx, hand, armAngle, weaponId, fillColor) {
   ctx.save();
   ctx.translate(hand.x, hand.y);
   ctx.rotate(armAngle);
-  ctx.fillStyle = SILHOUETTE;
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.lineWidth = 1;
+  ctx.fillStyle = fillColor;
 
   if (weaponId === "blade") {
     ctx.beginPath();
@@ -162,7 +161,6 @@ function drawWeapon(ctx, hand, armAngle, weaponId) {
     ctx.lineTo(-1.8, 46);
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
   } else if (weaponId === "spear") {
     ctx.beginPath();
     ctx.moveTo(-1.8, 0);
@@ -172,33 +170,28 @@ function drawWeapon(ctx, hand, armAngle, weaponId) {
     ctx.lineTo(-1.8, 58);
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
   } else if (weaponId === "gauntlets") {
     ctx.beginPath();
     ctx.arc(0, 4, 7.5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.stroke();
   }
   ctx.restore();
 }
 
-function drawShield(ctx, hand, armAngle, shieldId, isBlocking) {
+function drawShield(ctx, hand, armAngle, shieldId, isBlocking, fillColor) {
   if (shieldId === "evasive") return; // bare off-hand — nothing extra to draw
 
   const scale = isBlocking ? 1.6 : 0.85;
   ctx.save();
   ctx.translate(hand.x, hand.y);
   ctx.rotate(armAngle * 0.3);
-  ctx.fillStyle = SILHOUETTE;
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.lineWidth = 1;
+  ctx.fillStyle = fillColor;
 
   if (shieldId === "buckler") {
     const r = 11 * scale;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.stroke();
   } else if (shieldId === "tower") {
     const w = 17 * scale, h = 34 * scale;
     ctx.beginPath();
@@ -209,28 +202,99 @@ function drawShield(ctx, hand, armAngle, shieldId, isBlocking) {
     ctx.lineTo(-w / 2, h / 2 - 7);
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
   }
   ctx.restore();
 }
 
 function drawGlitch(ctx, cx, topY, bottomY, intensity) {
   if (intensity <= 0) return;
-  const w = 56;
+  const w = 90;
   const h = bottomY - topY;
   const bands = Math.floor(intensity * 10);
   for (let i = 0; i < bands; i++) {
     const by = topY + Math.random() * h;
-    const bh = 2 + Math.random() * 4;
-    const bx = cx - w / 2 + (Math.random() - 0.5) * 10 * intensity;
+    const bh = 2 + Math.random() * 5;
+    const bx = cx - w / 2 + (Math.random() - 0.5) * 14 * intensity;
     ctx.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.4)" : "rgba(190,190,200,0.35)";
     ctx.fillRect(bx, by, w, bh);
   }
 }
 
 export function spriteSize() {
-  return { w: 56, h: HEAD_R * 2 + NECK + TORSO_LEN + THIGH + SHIN };
+  return { w: OFF_W * RENDER_SCALE, h: OFF_H * RENDER_SCALE };
 }
+
+// Builds the whole right-facing body (no weapon/shield) at the fixed local
+// origin on the given offscreen context, filled with `color`. Returns the
+// key joint points (in local coords) so the caller can anchor the weapon,
+// shield and head without recomputing the pose math.
+function buildBody(octx, pose, poseKey, color) {
+  octx.fillStyle = color;
+
+  const heavyLift = poseKey === "heavy" ? -16 : 0;
+  const hipY = ORIGIN_Y - (THIGH + SHIN) - 4 + heavyLift;
+  const shoulderY = hipY - TORSO_LEN;
+  const headCenterY = shoulderY - NECK - HEAD_R;
+  const torsoLeanX = Math.sin(pose.lean) * TORSO_LEN * 0.4;
+  const cx = ORIGIN_X;
+
+  const hipB = { x: cx - HIP_X + torsoLeanX * 0.3, y: hipY };
+  const kneeB = pointAt(hipB.x, hipB.y, pose.hipB, THIGH);
+  const footB = pointAt(kneeB.x, kneeB.y, pose.hipB + pose.kneeB, SHIN);
+  limbChain(octx, hipB, kneeB, footB, [THIGH_W, SHIN_W], 0.28);
+  footShape(octx, footB, ANKLE_W);
+
+  const hipF = { x: cx + HIP_X + torsoLeanX * 0.3, y: hipY };
+  const kneeF = pointAt(hipF.x, hipF.y, pose.hipF, THIGH);
+  const footF = pointAt(kneeF.x, kneeF.y, pose.hipF + pose.kneeF, SHIN);
+  limbChain(octx, hipF, kneeF, footF, [THIGH_W, SHIN_W], 0.28);
+  footShape(octx, footF, ANKLE_W);
+
+  const hipCenter = { x: cx + torsoLeanX * 0.3, y: hipY };
+  const shoulderCenter = { x: cx + torsoLeanX, y: shoulderY };
+  limb(octx, hipCenter, shoulderCenter, TORSO_W[0], TORSO_W[1], 0.08);
+
+  const shB = { x: shoulderCenter.x - SHOULDER_X, y: shoulderCenter.y };
+  const elB = pointAt(shB.x, shB.y, pose.shB, UPPER_ARM);
+  const handB = pointAt(elB.x, elB.y, pose.shB + pose.elB, FOREARM);
+  limbChain(octx, shB, elB, handB, [UPPER_ARM_W, FOREARM_W], 0.3);
+  cap(octx, handB, WRIST_W + 2);
+
+  const headCenter = { x: shoulderCenter.x, y: headCenterY };
+  const neckBase = { x: shoulderCenter.x, y: headCenter.y + HEAD_R * 0.85 };
+  limb(octx, shoulderCenter, neckBase, NECK_W, NECK_W * 0.8, 0.1);
+  cap(octx, neckBase, NECK_W * 0.8);
+  octx.beginPath();
+  octx.arc(headCenter.x, headCenter.y, HEAD_R, 0, Math.PI * 2);
+  octx.fill();
+
+  const shF = { x: shoulderCenter.x + SHOULDER_X, y: shoulderCenter.y };
+  const elF = pointAt(shF.x, shF.y, pose.shF, UPPER_ARM);
+  const handF = pointAt(elF.x, elF.y, pose.shF + pose.elF, FOREARM);
+  limbChain(octx, shF, elF, handF, [UPPER_ARM_W, FOREARM_W], 0.3);
+  cap(octx, handF, WRIST_W + 2);
+
+  return { headCenterY, hipY, handF, handB, shF, shB };
+}
+
+const offCanvas = document.createElement("canvas");
+offCanvas.width = OFF_W;
+offCanvas.height = OFF_H;
+const offCtx = offCanvas.getContext("2d");
+
+// A second offscreen buffer, isolated from the real canvas, where the rim
+// light is composited — so recoloring it with "source-atop" only ever
+// touches this buffer's own dilated-silhouette pixels, never whatever is
+// already drawn on the main canvas underneath.
+const outlineCanvas = document.createElement("canvas");
+outlineCanvas.width = OFF_W;
+outlineCanvas.height = OFF_H;
+const outlineCtx = outlineCanvas.getContext("2d");
+
+const OUTLINE_OFFSETS = [
+  [-1.5, 0], [1.5, 0], [0, -1.5], [0, 1.5],
+  [-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1],
+];
 
 export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity = 0 } = {}) {
   const poseKey = poseFor(fighter);
@@ -243,13 +307,14 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const flashing = fighter.flashTimer > 0;
   const bodyColor = flashing ? FLASH_WHITE : SILHOUETTE;
 
-  // heavy has no real airtime in the physics (it's a grounded, timed state) —
-  // this cosmetic hip lift is what sells it as an actual flying kick.
-  const heavyLift = poseKey === "heavy" ? -16 : 0;
-  const hipY = fighter.y - (THIGH + SHIN) - 4 + heavyLift;
-  const shoulderY = hipY - TORSO_LEN;
-  const headCenterY = shoulderY - NECK - HEAD_R;
-  const torsoLeanX = Math.sin(pose.lean) * TORSO_LEN * 0.4;
+  // --- build the right-facing body + weapon/shield on the offscreen canvas ---
+  offCtx.clearRect(0, 0, OFF_W, OFF_H);
+  const joints = buildBody(offCtx, pose, poseKey, bodyColor);
+  if (!isBlocking) {
+    if (weaponId === "gauntlets") drawWeapon(offCtx, joints.handF, 0, "gauntlets", bodyColor);
+    else drawWeapon(offCtx, joints.handF, pose.shF + pose.elF, weaponId, bodyColor);
+  }
+  drawShield(offCtx, joints.handB, pose.shB + pose.elB, shieldId, isBlocking, bodyColor);
 
   ctx.save();
   if (fighter.invulnerable) ctx.globalAlpha = 0.55;
@@ -265,68 +330,40 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
     ctx.globalAlpha = 0.25;
     ctx.fillStyle = weaponColor;
     ctx.beginPath();
-    ctx.arc(cx, (headCenterY + hipY) / 2, 46, 0, Math.PI * 2);
+    ctx.arc(cx, (joints.headCenterY + joints.hipY) / 2, 70, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  ctx.fillStyle = bodyColor;
+  const destW = OFF_W * RENDER_SCALE;
+  const destH = OFF_H * RENDER_SCALE;
+  const destX = cx - destW / 2;
+  const destY = fighter.y - ORIGIN_Y * RENDER_SCALE;
 
-  // legs (back leg drawn first so the front leg overlaps it)
-  const hipB = { x: cx - HIP_X + torsoLeanX * 0.3, y: hipY };
-  const kneeB = pointAt(hipB.x, hipB.y, pose.hipB, THIGH);
-  const footB = pointAt(kneeB.x, kneeB.y, pose.hipB + pose.kneeB, SHIN);
-  limbChain(ctx, hipB, kneeB, footB, [THIGH_W, SHIN_W], 0.28);
-  footShape(ctx, footB, ANKLE_W);
-
-  const hipF = { x: cx + HIP_X + torsoLeanX * 0.3, y: hipY };
-  const kneeF = pointAt(hipF.x, hipF.y, pose.hipF, THIGH);
-  const footF = pointAt(kneeF.x, kneeF.y, pose.hipF + pose.kneeF, SHIN);
-  limbChain(ctx, hipF, kneeF, footF, [THIGH_W, SHIN_W], 0.28);
-  footShape(ctx, footF, ANKLE_W);
-
-  // torso — one continuous curved taper from hip to shoulder; its ends are
-  // already flat lines the right width, so unlike the limbs it needs no
-  // round cap of its own (the arms/legs round off their own attachment
-  // points onto it instead)
-  const hipCenter = { x: cx + torsoLeanX * 0.3, y: hipY };
-  const shoulderCenter = { x: cx + torsoLeanX, y: shoulderY };
-  limb(ctx, hipCenter, shoulderCenter, TORSO_W[0], TORSO_W[1], 0.08);
-
-  // back arm (behind torso)
-  const shB = { x: shoulderCenter.x - SHOULDER_X, y: shoulderCenter.y };
-  const elB = pointAt(shB.x, shB.y, pose.shB, UPPER_ARM);
-  const handB = pointAt(elB.x, elB.y, pose.shB + pose.elB, FOREARM);
-  limbChain(ctx, shB, elB, handB, [UPPER_ARM_W, FOREARM_W], 0.3);
-  cap(ctx, handB, WRIST_W + 2);
-
-  // head, with a short tapered neck instead of the head sitting flush on
-  // the shoulders
-  const headCenter = { x: shoulderCenter.x, y: headCenterY };
-  const neckBase = { x: shoulderCenter.x, y: headCenter.y + HEAD_R * 0.85 };
-  limb(ctx, shoulderCenter, neckBase, NECK_W, NECK_W * 0.8, 0.1);
-  cap(ctx, neckBase, NECK_W * 0.8);
-  ctx.beginPath();
-  ctx.arc(headCenter.x, headCenter.y, HEAD_R, 0, Math.PI * 2);
-  ctx.fill();
-
-  // front arm (in front of torso)
-  const shF = { x: shoulderCenter.x + SHOULDER_X, y: shoulderCenter.y };
-  const elF = pointAt(shF.x, shF.y, pose.shF, UPPER_ARM);
-  const handF = pointAt(elF.x, elF.y, pose.shF + pose.elF, FOREARM);
-  limbChain(ctx, shF, elF, handF, [UPPER_ARM_W, FOREARM_W], 0.3);
-  cap(ctx, handF, WRIST_W + 2);
-
-  // weapon + shield, anchored to the actual hand positions via forward kinematics
-  if (!isBlocking) {
-    if (weaponId === "gauntlets") drawWeapon(ctx, handF, 0, "gauntlets");
-    else drawWeapon(ctx, handF, pose.shF + pose.elF, weaponId);
+  // Rim light: dilate the whole body's silhouette by a pixel or two in
+  // every direction on an isolated buffer, then recolor just that buffer —
+  // so the result is one continuous light edge around the OUTSIDE of the
+  // whole figure, not a separate outline around every limb (which is what
+  // was reading as assembled parts rather than a person). The real black
+  // body is drawn on top right after, covering everything but that thin
+  // outer ring.
+  if (!flashing) {
+    outlineCtx.clearRect(0, 0, OFF_W, OFF_H);
+    for (const [ox, oy] of OUTLINE_OFFSETS) {
+      outlineCtx.drawImage(offCanvas, ox, oy);
+    }
+    outlineCtx.globalCompositeOperation = "source-atop";
+    outlineCtx.fillStyle = RIM_LIGHT;
+    outlineCtx.fillRect(0, 0, OFF_W, OFF_H);
+    outlineCtx.globalCompositeOperation = "source-over";
+    ctx.drawImage(outlineCanvas, destX, destY, destW, destH);
   }
-  drawShield(ctx, handB, pose.shB + pose.elB, shieldId, isBlocking);
+
+  ctx.drawImage(offCanvas, destX, destY, destW, destH);
 
   ctx.restore();
 
   if (isCpu && glitchIntensity > 0) {
-    drawGlitch(ctx, fighter.x, headCenterY - HEAD_R, fighter.y, glitchIntensity);
+    drawGlitch(ctx, fighter.x, destY, fighter.y, glitchIntensity);
   }
 }

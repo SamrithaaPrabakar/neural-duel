@@ -1,16 +1,53 @@
 // Campaign structure: 30 levels grouped into themed chapters of 10, each
-// chapter reusing one painted arena backdrop (the same way a real fighting
-// game reuses a handful of locations across many story levels, rather than
+// chapter reusing one arena backdrop (the same way a real fighting game
+// reuses a handful of locations across many story levels, rather than
 // painting 30 unique ones). Beating the current highest-unlocked level
 // unlocks the next; progress is persisted (see persistence.js).
+//
+// The arena itself is drawn procedurally (see main.js's drawArena), not
+// from a photo/illustration file — a flat side-on stage, always rendered
+// locally, that stays readable behind a silhouette fighter and never
+// depends on an external image-generation quota. THEME_PALETTES is what
+// gives each chapter its own color identity within that one procedural
+// look.
 
 export const TOTAL_LEVELS = 30;
 
 export const ARENAS = [
-  { id: "china", name: "Imperial Palace", theme: "China", bg: "art/arenas/china.jpg" },
-  { id: "greece", name: "Ruins of Olympus", theme: "Greece", bg: "art/arenas/greece.jpg" },
-  { id: "japan", name: "Autumn Shrine", theme: "Japan", bg: "art/arenas/japan.jpg" },
+  { id: "china", name: "Imperial Palace", theme: "China" },
+  { id: "greece", name: "Ruins of Olympus", theme: "Greece" },
+  { id: "japan", name: "Autumn Shrine", theme: "Japan" },
 ];
+
+export const THEME_PALETTES = {
+  China: {
+    sky: ["#1a0a0d", "#3a1016", "#6e2222"],
+    core: "rgba(255,190,120,0.55)",
+    pillar: "10,8,16",
+    ground: "#210f0f",
+    rim: "rgba(255,180,120,0.55)",
+    ember: "255,170,90",
+    cardGradient: "linear-gradient(160deg, #6e2222, #1a0a0d)",
+  },
+  Greece: {
+    sky: ["#0a1222", "#17243f", "#3a567e"],
+    core: "rgba(210,225,255,0.5)",
+    pillar: "16,16,22",
+    ground: "#121722",
+    rim: "rgba(210,225,255,0.5)",
+    ember: "220,230,255",
+    cardGradient: "linear-gradient(160deg, #3a567e, #0a1222)",
+  },
+  Japan: {
+    sky: ["#120a1f", "#2a1438", "#6a2f3a"],
+    core: "rgba(255,210,140,0.55)",
+    pillar: "10,8,16",
+    ground: "#1a1420",
+    rim: "rgba(255,200,140,0.55)",
+    ember: "255,200,120",
+    cardGradient: "linear-gradient(160deg, #6a2f3a, #120a1f)",
+  },
+};
 
 const LEVELS_PER_CHAPTER = Math.ceil(TOTAL_LEVELS / ARENAS.length);
 
@@ -40,14 +77,4 @@ export function levelEpsilonClamp(level, baseEpsilon) {
 
 export function levelCpuBonusPoints(level) {
   return Math.floor((level - 1) / 5); // +1 stat point every 5 levels, up to +5
-}
-
-const imageCache = new Map();
-export function loadArenaImage(arena) {
-  if (!imageCache.has(arena.id)) {
-    const img = new Image();
-    img.src = arena.bg;
-    imageCache.set(arena.id, img);
-  }
-  return imageCache.get(arena.id);
 }
