@@ -101,6 +101,13 @@ body {
 .menu-card .sub { color: var(--muted); font-size: 18px; margin-bottom: 24px; font-weight: 600; }
 .about-body p { color: var(--ink); font-size: 18px; line-height: 1.5; margin: 0 0 12px; }
 .about-body b { color: var(--orange); }
+.about-body .btn { margin-bottom: 18px; }
+.settings-subhead {
+  font-family: var(--pixel-font);
+  font-size: 13px;
+  color: var(--teal);
+  margin: 10px 0 10px;
+}
 
 .btn {
   display: block;

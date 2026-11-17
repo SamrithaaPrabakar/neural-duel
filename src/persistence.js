@@ -5,7 +5,7 @@
 const STORAGE_KEY = "neural-duel-save-v1";
 
 export function emptyLifetime() {
-  return { matches: 0, wins: 0, losses: 0, currentStreak: 0, bestStreak: 0 };
+  return { matches: 0, wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, history: [] };
 }
 
 export function loadSave() {
@@ -14,9 +14,12 @@ export function loadSave() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
+    const lifetime = parsed.lifetime && typeof parsed.lifetime === "object"
+      ? { ...emptyLifetime(), ...parsed.lifetime, history: Array.isArray(parsed.lifetime.history) ? parsed.lifetime.history : [] }
+      : emptyLifetime();
     return {
       qlearner: parsed.qlearner && typeof parsed.qlearner === "object" ? parsed.qlearner : null,
-      lifetime: parsed.lifetime && typeof parsed.lifetime === "object" ? { ...emptyLifetime(), ...parsed.lifetime } : emptyLifetime(),
+      lifetime,
     };
   } catch {
     return null;

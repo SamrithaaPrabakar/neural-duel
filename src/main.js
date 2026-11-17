@@ -32,6 +32,19 @@ let player = null;
 let cpu = null;
 let playerLoadout = { weapon: "blade", shield: "buckler", stats: defaultStats() };
 
+const DIFFICULTIES = {
+  practice: { name: "Practice", desc: "The CPU leans on exploring over its best-known move — more forgiving, even against a well-trained brain.", color: "#00897B" },
+  normal: { name: "Normal", desc: "The CPU plays at its real, current skill — exactly as trained.", color: "#7C4DFF" },
+  hard: { name: "Hard", desc: "The CPU leans hard on its best-known move over exploring — sharper, less forgiving.", color: "#C62828" },
+};
+let selectedDifficulty = "normal";
+
+function difficultyEpsilon(difficulty, baseEpsilon) {
+  if (difficulty === "practice") return Math.max(baseEpsilon, 0.35);
+  if (difficulty === "hard") return Math.min(baseEpsilon, 0.08);
+  return baseEpsilon;
+}
+
 let wins = { player: 0, cpu: 0 };
 let roundOver = false;
 let roundOverTimer = 0;
@@ -63,12 +76,43 @@ document.querySelectorAll("[data-back]").forEach((b) => {
   b.onclick = () => { clickSound(); showScreen(b.dataset.back); };
 });
 
-document.getElementById("btn-sound-toggle").onclick = () => {
+function syncSoundLabel() {
+  const label = `SND: ${isMuted() ? "OFF" : "ON"}`;
+  document.getElementById("btn-sound-toggle").textContent = label;
+  const settingsBtn = document.getElementById("btn-settings-sound");
+  if (settingsBtn) settingsBtn.textContent = `SOUND: ${isMuted() ? "OFF" : "ON"}`;
+}
+function toggleSound() {
   sfx.unlock();
-  const next = !isMuted();
-  setMuted(next);
-  document.getElementById("btn-sound-toggle").textContent = `SND: ${next ? "OFF" : "ON"}`;
+  setMuted(!isMuted());
+  syncSoundLabel();
+}
+document.getElementById("btn-sound-toggle").onclick = toggleSound;
+
+document.getElementById("btn-settings").onclick = () => {
+  clickSound();
+  renderSettingsScreen();
+  showScreen("screen-settings");
 };
+document.getElementById("btn-settings-sound").onclick = () => { clickSound(); toggleSound(); };
+document.getElementById("btn-settings-clear").onclick = () => {
+  clickSound();
+  if (!confirm("Clear all saved progress? This resets the AI's learning and your lifetime win/loss record. This can't be undone.")) return;
+  learner.reset();
+  lifetime = emptyLifetime();
+  rewardHistory = [];
+  totalReward = 0;
+  clearSave();
+  renderSettingsScreen();
+};
+
+function renderSettingsScreen() {
+  syncSoundLabel();
+  document.getElementById("settings-lifetime").textContent =
+    `${lifetime.wins}W-${lifetime.losses}L (best streak ${lifetime.bestStreak})`;
+  document.getElementById("settings-matches").textContent = lifetime.matches;
+  document.getElementById("settings-history").textContent = lifetime.history.join(" ") || "–";
+}
 
 // ============ LOADOUT SCREEN ============
 function openLoadout() {
@@ -134,6 +178,17 @@ function renderLoadoutScreen() {
       playerLoadout.stats[key] = nextVal;
       renderLoadoutScreen();
     };
+  });
+
+  const diffWrap = document.getElementById("difficulty-cards");
+  diffWrap.innerHTML = Object.entries(DIFFICULTIES).map(([id, d]) => `
+    <button class="pick-card ${selectedDifficulty === id ? "selected" : ""}" data-difficulty="${id}" style="--accent:${d.color}">
+      <div class="pick-name">${d.name}</div>
+      <div class="pick-desc">${d.desc}</div>
+    </button>
+  `).join("");
+  diffWrap.querySelectorAll("[data-difficulty]").forEach((b) => {
+    b.onclick = () => { clickSound(); selectedDifficulty = b.dataset.difficulty; renderLoadoutScreen(); };
   });
 }
 
@@ -318,7 +373,7 @@ function startMatch() {
   document.getElementById("banner-player").textContent =
     `YOU: ${WEAPONS[playerLoadout.weapon].name} + ${SHIELDS[playerLoadout.shield].name}`;
   document.getElementById("banner-cpu").textContent =
-    `CPU: ${WEAPONS[cLoadout.weapon].name} + ${SHIELDS[cLoadout.shield].name}`;
+    `CPU: ${WEAPONS[cLoadout.weapon].name} + ${SHIELDS[cLoadout.shield].name} · ${DIFFICULTIES[selectedDifficulty].name}`;
 
   wins = { player: 0, cpu: 0 };
   roundOutcomes = [];
@@ -383,6 +438,8 @@ function endRound(playerWon) {
       lifetime.losses++;
       lifetime.currentStreak = 0;
     }
+    lifetime.history.push(playerWonMatch ? "W" : "L");
+    if (lifetime.history.length > 10) lifetime.history.shift();
   }
 
   persistProgress();
@@ -460,7 +517,14 @@ function runAI(dt) {
   ai.took = 0;
 
   const wasReady = cpu.meter >= 100;
-  const { action } = learner.chooseAction(currentState, available);
+  // Difficulty adjusts only how often the CPU explores vs. uses its best-known
+  // move for THIS match — it never touches the real, persisted epsilon/Q-table,
+  // so "Practice"/"Hard" never fake or hide genuine learning progress.
+  const effectiveEpsilon = difficultyEpsilon(selectedDifficulty, learner.epsilon);
+  const explored = Math.random() < effectiveEpsilon;
+  const action = explored
+    ? available[Math.floor(Math.random() * available.length)]
+    : learner.bestAction(currentState, available).action;
   if (wasReady && action === "special") sfx.meterFull();
   ai.prevState = currentState;
   ai.prevAction = action;
@@ -684,15 +748,6 @@ document.getElementById("btn-reset-brain").onclick = () => {
   persistProgress();
 };
 document.getElementById("btn-new-match").onclick = () => { clickSound(); openLoadout(); };
-document.getElementById("btn-clear-progress").onclick = () => {
-  clickSound();
-  if (!confirm("Clear all saved progress? This resets the AI's learning and your lifetime win/loss record. This can't be undone.")) return;
-  learner.reset();
-  lifetime = emptyLifetime();
-  rewardHistory = [];
-  totalReward = 0;
-  clearSave();
-};
 
 renderLoadoutScreen();
 showScreen("screen-menu");
