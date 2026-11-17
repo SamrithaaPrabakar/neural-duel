@@ -291,20 +291,115 @@ outlineCanvas.width = OFF_W;
 outlineCanvas.height = OFF_H;
 const outlineCtx = outlineCanvas.getContext("2d");
 
-const OUTLINE_OFFSETS = [
-  [-1.5, 0], [1.5, 0], [0, -1.5], [0, 1.5],
-  [-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1],
+// Unit directions for the rim-light dilation; the actual per-pixel offset
+// is `dir * magnitude`, where magnitude is chosen per source image so the
+// rim stays the same apparent thickness on screen regardless of how much
+// that source gets scaled up or down to its destination size.
+const OUTLINE_DIRS = [
+  [-1, 0], [1, 0], [0, -1], [0, 1],
+  [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7],
 ];
+
+// A real illustrated sprite for the idle stance (art/fighter/idle.png) —
+// a flat black silhouette on a white background, alpha-keyed by luminance
+// at build time so white becomes transparent. Other poses stay on the
+// procedural rig above until more pose art exists; this is a deliberate,
+// visible seam for now, not a bug.
+const IDLE_SPRITE_SRC = "art/fighter/idle.png";
+const idleSprite = new Image();
+idleSprite.src = IDLE_SPRITE_SRC;
+
+let rimCanvas = null, rimCtx = null;
+let flashCanvas = null, flashCtx2 = null;
+
+function getScratchCanvas(which, w, h) {
+  if (which === "rim") {
+    if (!rimCanvas) { rimCanvas = document.createElement("canvas"); rimCtx = rimCanvas.getContext("2d"); }
+    if (rimCanvas.width !== w || rimCanvas.height !== h) { rimCanvas.width = w; rimCanvas.height = h; }
+    return [rimCanvas, rimCtx];
+  }
+  if (!flashCanvas) { flashCanvas = document.createElement("canvas"); flashCtx2 = flashCanvas.getContext("2d"); }
+  if (flashCanvas.width !== w || flashCanvas.height !== h) { flashCanvas.width = w; flashCanvas.height = h; }
+  return [flashCanvas, flashCtx2];
+}
+
+// Draws any black-on-transparent source (an <img> or a <canvas>) at
+// destX/destY/destW/destH, with the same rim-light treatment as the
+// procedural rig, scaled so the rim reads at a consistent thickness.
+function drawSilhouetteSource(ctx, src, srcW, srcH, destX, destY, destW, destH, flashing) {
+  if (flashing) {
+    const [buf, bctx] = getScratchCanvas("flash", srcW, srcH);
+    bctx.clearRect(0, 0, srcW, srcH);
+    bctx.drawImage(src, 0, 0, srcW, srcH);
+    bctx.globalCompositeOperation = "source-atop";
+    bctx.fillStyle = FLASH_WHITE;
+    bctx.fillRect(0, 0, srcW, srcH);
+    bctx.globalCompositeOperation = "source-over";
+    ctx.drawImage(buf, destX, destY, destW, destH);
+    return;
+  }
+
+  const screenRimPx = 1.6;
+  const mag = screenRimPx / (destH / srcH);
+  const [buf, bctx] = getScratchCanvas("rim", srcW, srcH);
+  bctx.clearRect(0, 0, srcW, srcH);
+  for (const [dx, dy] of OUTLINE_DIRS) {
+    bctx.drawImage(src, dx * mag, dy * mag, srcW, srcH);
+  }
+  bctx.globalCompositeOperation = "source-atop";
+  bctx.fillStyle = RIM_LIGHT;
+  bctx.fillRect(0, 0, srcW, srcH);
+  bctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(buf, destX, destY, destW, destH);
+  ctx.drawImage(src, destX, destY, destW, destH);
+}
+
+// Displayed character height for the procedural rig, in screen pixels —
+// used both to size the offscreen blit and to size the raster idle sprite
+// to roughly the same height, so swapping between them isn't a visible
+// jump in scale.
+const CHAR_H = (HEAD_R * 2 + NECK + TORSO_LEN + THIGH + SHIN) * RENDER_SCALE;
+
+function drawIdleSprite(ctx, fighter, flashing, isCpu, glitchIntensity) {
+  const srcW = idleSprite.naturalWidth, srcH = idleSprite.naturalHeight;
+  const destH = CHAR_H;
+  const destW = destH * (srcW / srcH);
+
+  ctx.save();
+  if (fighter.invulnerable) ctx.globalAlpha = 0.55;
+  const flipped = fighter.facing === -1;
+  if (flipped) { ctx.translate(fighter.x, 0); ctx.scale(-1, 1); }
+  const cx = flipped ? 0 : fighter.x;
+
+  const destX = cx - destW / 2;
+  const destY = fighter.y - destH;
+  drawSilhouetteSource(ctx, idleSprite, srcW, srcH, destX, destY, destW, destH, flashing);
+
+  ctx.restore();
+
+  if (isCpu && glitchIntensity > 0) {
+    drawGlitch(ctx, fighter.x, destY, fighter.y, glitchIntensity);
+  }
+}
 
 export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity = 0 } = {}) {
   const poseKey = poseFor(fighter);
+  const flashing = fighter.flashTimer > 0;
+
+  // Idle uses the real illustrated sprite once it's loaded; every other
+  // pose still uses the procedural rig until more pose art exists — a
+  // deliberate, visible seam for now, not a bug.
+  if (poseKey === "idle" && idleSprite.complete && idleSprite.naturalWidth > 0) {
+    drawIdleSprite(ctx, fighter, flashing, isCpu, glitchIntensity);
+    return;
+  }
+
   const pose = poseKey === "walk" ? POSES[walkPhase === 0 ? "walkA" : "walkB"] : (POSES[poseKey] || POSES.idle);
 
   const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
   const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
   const shieldId = fighter.profile ? fighter.profile.shield.id : "buckler";
   const isBlocking = fighter.state === "block";
-  const flashing = fighter.flashTimer > 0;
   const bodyColor = flashing ? FLASH_WHITE : SILHOUETTE;
 
   // --- build the right-facing body + weapon/shield on the offscreen canvas ---
@@ -349,8 +444,8 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   // outer ring.
   if (!flashing) {
     outlineCtx.clearRect(0, 0, OFF_W, OFF_H);
-    for (const [ox, oy] of OUTLINE_OFFSETS) {
-      outlineCtx.drawImage(offCanvas, ox, oy);
+    for (const [ox, oy] of OUTLINE_DIRS) {
+      outlineCtx.drawImage(offCanvas, ox * 1.6, oy * 1.6);
     }
     outlineCtx.globalCompositeOperation = "source-atop";
     outlineCtx.fillStyle = RIM_LIGHT;
