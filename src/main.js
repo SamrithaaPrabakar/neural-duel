@@ -614,37 +614,87 @@ function drawDashPips(x, fighter, flip) {
   }
 }
 
+// Atmospheric arena: dark moody sky, a glowing horizon core with god-rays,
+// three parallax layers of silhouette pillars, and a dim rim-lit ground —
+// the dramatic backdrop the silhouette fighters are read against. The
+// bright, colorful chrome (menu/settings/loadout) is untouched by this;
+// the mood is scoped to the fight itself.
+function drawArena(ctx, t) {
+  const W = PHYSICS.ARENA_WIDTH, H = PHYSICS.ARENA_HEIGHT, GY = PHYSICS.GROUND_Y;
+  const cx = W / 2, coreY = GY - 30;
+
+  const sky = ctx.createLinearGradient(0, 0, 0, GY);
+  sky.addColorStop(0, "#120a1f");
+  sky.addColorStop(0.55, "#2a1438");
+  sky.addColorStop(1, "#6a2f3a");
+  ctx.fillStyle = sky;
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  // glowing core at the horizon, blended from both fighters' colors
+  const core = ctx.createRadialGradient(cx, coreY, 0, cx, coreY, W * 0.55);
+  core.addColorStop(0, "rgba(255,210,140,0.55)");
+  core.addColorStop(0.3, hexAlpha(player.profile.color, 0.12));
+  core.addColorStop(0.6, hexAlpha(cpu.profile.color, 0.08));
+  core.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, W, GY);
+
+  // god-rays, slow drift
+  ctx.save();
+  ctx.globalAlpha = 0.1;
+  ctx.fillStyle = "#ffe3b0";
+  const rayCount = 9;
+  const drift = (t * 0.00006) % (Math.PI * 2);
+  for (let i = 0; i < rayCount; i++) {
+    const a = drift + (i / rayCount) * Math.PI * 2;
+    const spread = 0.055;
+    const len = W * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(cx, coreY);
+    ctx.lineTo(cx + Math.cos(a - spread) * len, coreY + Math.sin(a - spread) * len * 0.55);
+    ctx.lineTo(cx + Math.cos(a + spread) * len, coreY + Math.sin(a + spread) * len * 0.55);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // parallax pillar silhouettes — three depths, back to front
+  const pillarLayers = [
+    { y0: GY * 0.25, w: 26, gap: 150, offset: 40, alpha: 0.28, jitter: 0 },
+    { y0: GY * 0.42, w: 34, gap: 118, offset: 90, alpha: 0.4, jitter: 10 },
+    { y0: GY * 0.6, w: 44, gap: 96, offset: 10, alpha: 0.6, jitter: 18 },
+  ];
+  for (const layer of pillarLayers) {
+    ctx.fillStyle = `rgba(10,8,16,${layer.alpha})`;
+    for (let x = -layer.offset; x < W + layer.w; x += layer.gap) {
+      const h = GY - layer.y0 + Math.sin(x * 0.01) * layer.jitter;
+      ctx.fillRect(x, GY - h, layer.w, h);
+    }
+  }
+
+  // ground: dark stone, lit by a thin warm rim at the horizon
+  ctx.fillStyle = "#1a1420";
+  ctx.fillRect(0, GY + 2, W, H - GY - 2);
+  const rim = ctx.createLinearGradient(0, GY - 3, 0, GY + 10);
+  rim.addColorStop(0, "rgba(0,0,0,0)");
+  rim.addColorStop(0.5, "rgba(255,200,140,0.55)");
+  rim.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = rim;
+  ctx.fillRect(0, GY - 3, W, 13);
+  ctx.strokeStyle = "rgba(255,210,150,0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, GY + 2);
+  ctx.lineTo(W, GY + 2);
+  ctx.stroke();
+  ctx.lineWidth = 1;
+}
+
 function render() {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
-  // bright backdrop: sky-to-sun gradient tinted by each fighter's weapon color
-  const grd = ctx.createLinearGradient(0, 0, 0, PHYSICS.ARENA_HEIGHT);
-  grd.addColorStop(0, "#bfe7ff");
-  grd.addColorStop(1, "#ffe9c7");
-  ctx.fillStyle = grd;
-  ctx.fillRect(-20, -20, canvas.width + 40, canvas.height + 40);
-
-  const sideGlow = ctx.createLinearGradient(0, 0, PHYSICS.ARENA_WIDTH, 0);
-  sideGlow.addColorStop(0, hexAlpha(player.profile.color, 0.16));
-  sideGlow.addColorStop(0.5, "rgba(255,255,255,0)");
-  sideGlow.addColorStop(1, hexAlpha(cpu.profile.color, 0.16));
-  ctx.fillStyle = sideGlow;
-  ctx.fillRect(0, 0, PHYSICS.ARENA_WIDTH, PHYSICS.ARENA_HEIGHT);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.5)";
-  for (let gx = 0; gx <= PHYSICS.ARENA_WIDTH; gx += 60) {
-    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, PHYSICS.GROUND_Y); ctx.stroke();
-  }
-  ctx.fillStyle = "#9bd97a";
-  ctx.fillRect(0, PHYSICS.GROUND_Y + 2, PHYSICS.ARENA_WIDTH, PHYSICS.ARENA_HEIGHT - PHYSICS.GROUND_Y - 2);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, PHYSICS.GROUND_Y + 2);
-  ctx.lineTo(PHYSICS.ARENA_WIDTH, PHYSICS.GROUND_Y + 2);
-  ctx.stroke();
-  ctx.lineWidth = 1;
+  drawArena(ctx, performance.now());
 
   drawFighterSprite(ctx, player, { isCpu: false });
   const glitchIntensity = Math.max(0, (learner.epsilon - 0.08)) * 0.9;
