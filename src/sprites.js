@@ -1,40 +1,37 @@
 // Fighter rendering: an articulated silhouette rig — torso, head, and four
-// limb segments (upper arm/forearm, thigh/shin) drawn as rotated, round-
-// capped strokes from a small per-pose angle table, rather than a fixed
+// limb segments (upper arm/forearm, thigh/shin) built from filled, tapered
+// shapes driven by a small per-pose angle table, rather than a fixed
 // pixel-grid bitmap. That's what lets a heavy attack read as an actual
 // flying kick instead of a palette-swapped idle pose.
 //
-// Each fighter's silhouette carries a soft glow in its weapon's accent
-// color (shadowBlur), which is also how the CPU's glitch overlay and hit
-// flashes read against a mostly-black body.
-//
-// The CPU fighter additionally renders a "glitch" overlay whose intensity
-// is driven by the Q-learner's epsilon: lots of noise early (it's acting
-// randomly), clean and solid once it has mostly stopped exploring.
+// The fighters themselves are a flat, near-black cutout with no glow or
+// color on the body or weapon — same convention as a real backlit side-on
+// fighting silhouette: you read the two fighters by position and pose, not
+// by a neon outline. Color lives in the HUD (portraits, health bars) and in
+// brief VFX (special-move aura, hit flash), never on the body itself.
 
-const BODY_INK = "#101118";
+const SILHOUETTE = "#050506";
 const FLASH_WHITE = "#ffffff";
 
-const HEAD_R = 11;
-const NECK = 5;
-const TORSO_LEN = 32;
-const SHOULDER_X = 13;
-const HIP_X = 9;
-const UPPER_ARM = 19;
-const FOREARM = 17;
-const THIGH = 23;
-const SHIN = 21;
+const HEAD_R = 9;
+const NECK = 4;
+const TORSO_LEN = 35;
+const SHOULDER_X = 12;
+const HIP_X = 7;
+const UPPER_ARM = 21;
+const FOREARM = 19;
+const THIGH = 27;
+const SHIN = 25;
 
 // Tapered widths (wide end -> narrow end) for each limb segment, so a limb
-// reads as an actual tapering arm/leg of flesh rather than a uniform-width
-// stick — this is what makes the silhouette read as a real body instead of
-// a wireframe rig.
-const TORSO_W_HIP = 22;
-const TORSO_W_SHOULDER = 30;
-const UPPER_ARM_W = [14, 10];
-const FOREARM_W = [10, 7];
-const THIGH_W = [18, 14];
-const SHIN_W = [13, 9];
+// reads as an actual tapering arm/leg rather than a uniform-width stick —
+// and a slim waist / broad shoulders for an athletic, heroic silhouette.
+const TORSO_W_HIP = 17;
+const TORSO_W_SHOULDER = 29;
+const UPPER_ARM_W = [12.5, 9];
+const FOREARM_W = [8.5, 6];
+const THIGH_W = [16, 12];
+const SHIN_W = [10.5, 7];
 
 // Angles are radians from straight-down, rotating toward +x (the facing
 // direction) for positive values. F = front limb (weapon side), B = back
@@ -105,84 +102,81 @@ function cap(ctx, p, r) {
   ctx.fill();
 }
 
+// A small flattened foot blob, offset forward (+local x) from the ankle so
+// it reads as a foot planted on the ground rather than the shin just
+// stopping mid-air.
+function footShape(ctx, ankle, size) {
+  ctx.beginPath();
+  ctx.ellipse(ankle.x + size * 0.55, ankle.y + size * 0.1, size * 0.85, size * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function limbChain(ctx, p0, p1, p2, w) {
   tapered(ctx, p0, p1, w[0][0], w[0][1]);
   cap(ctx, p1, w[0][1] / 2);
   tapered(ctx, p1, p2, w[1][0], w[1][1]);
-  cap(ctx, p2, w[1][1] / 2);
 }
 
-function drawWeapon(ctx, hand, armAngle, weaponId, color) {
+// Weapon and shield are drawn in the same flat silhouette tone as the body
+// — like the body, they read by shape, not by color — with a hairline
+// translucent edge so a blade or shield rim still separates visually from
+// whatever's directly behind it.
+function drawWeapon(ctx, hand, armAngle, weaponId) {
   ctx.save();
   ctx.translate(hand.x, hand.y);
   ctx.rotate(armAngle);
+  ctx.fillStyle = SILHOUETTE;
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
 
   if (weaponId === "blade") {
-    ctx.fillStyle = "#1c1d24";
-    ctx.fillRect(-3, -4, 6, 10);
-    ctx.fillStyle = "#0a0a0d";
-    ctx.fillRect(-10, 5, 20, 3.5);
-    ctx.fillStyle = color;
-    ctx.fillRect(-3.5, 8.5, 7, 32);
     ctx.beginPath();
-    ctx.moveTo(-3.5, 40.5);
-    ctx.lineTo(3.5, 40.5);
-    ctx.lineTo(0, 49);
+    ctx.moveTo(-2.5, 6);
+    ctx.lineTo(2.5, 6);
+    ctx.lineTo(1.8, 46);
+    ctx.lineTo(0, 52);
+    ctx.lineTo(-1.8, 46);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   } else if (weaponId === "spear") {
-    ctx.fillStyle = "#5a4328";
-    ctx.fillRect(-2.2, -4, 4.4, 50);
-    ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(-6, 46);
-    ctx.lineTo(6, 46);
-    ctx.lineTo(0, 64);
+    ctx.moveTo(-1.8, 0);
+    ctx.lineTo(1.8, 0);
+    ctx.lineTo(1.8, 58);
+    ctx.lineTo(0, 70);
+    ctx.lineTo(-1.8, 58);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   } else if (weaponId === "gauntlets") {
-    ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(0, 4, 9, 0, Math.PI * 2);
+    ctx.arc(0, 4, 7.5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.beginPath();
-    ctx.arc(-3, 1, 2.6, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.stroke();
   }
   ctx.restore();
 }
 
-function drawShield(ctx, hand, armAngle, shieldId, color, isBlocking) {
-  if (shieldId === "evasive") {
-    ctx.save();
-    ctx.translate(hand.x, hand.y);
-    ctx.fillStyle = "#1c1d24";
-    ctx.beginPath();
-    ctx.arc(0, -2, 6.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
+function drawShield(ctx, hand, armAngle, shieldId, isBlocking) {
+  if (shieldId === "evasive") return; // bare off-hand — nothing extra to draw
 
-  const scale = isBlocking ? 1.7 : 0.85;
+  const scale = isBlocking ? 1.6 : 0.85;
   ctx.save();
   ctx.translate(hand.x, hand.y);
   ctx.rotate(armAngle * 0.3);
+  ctx.fillStyle = SILHOUETTE;
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
 
   if (shieldId === "buckler") {
-    const r = 12 * scale;
-    ctx.fillStyle = color;
+    const r = 11 * scale;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.32, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.stroke();
   } else if (shieldId === "tower") {
-    const w = 18 * scale, h = 36 * scale;
-    ctx.fillStyle = color;
+    const w = 17 * scale, h = 34 * scale;
     ctx.beginPath();
     ctx.moveTo(-w / 2, -h / 2);
     ctx.lineTo(w / 2, -h / 2);
@@ -191,9 +185,7 @@ function drawShield(ctx, hand, armAngle, shieldId, color, isBlocking) {
     ctx.lineTo(-w / 2, h / 2 - 7);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.3)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0); ctx.stroke();
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -207,7 +199,7 @@ function drawGlitch(ctx, cx, topY, bottomY, intensity) {
     const by = topY + Math.random() * h;
     const bh = 2 + Math.random() * 4;
     const bx = cx - w / 2 + (Math.random() - 0.5) * 10 * intensity;
-    ctx.fillStyle = Math.random() < 0.5 ? "rgba(0,240,255,0.4)" : "rgba(255,0,140,0.35)";
+    ctx.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.4)" : "rgba(190,190,200,0.35)";
     ctx.fillRect(bx, by, w, bh);
   }
 }
@@ -223,11 +215,9 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
   const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
   const shieldId = fighter.profile ? fighter.profile.shield.id : "buckler";
-  const shieldColor = fighter.profile ? fighter.profile.shieldColor : "#9ad1ff";
   const isBlocking = fighter.state === "block";
   const flashing = fighter.flashTimer > 0;
-  const bodyColor = flashing ? FLASH_WHITE : BODY_INK;
-  const glowColor = flashing ? "#ffffff" : weaponColor;
+  const bodyColor = flashing ? FLASH_WHITE : SILHOUETTE;
 
   // heavy has no real airtime in the physics (it's a grounded, timed state) —
   // this cosmetic hip lift is what sells it as an actual flying kick.
@@ -244,9 +234,11 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   if (flipped) { ctx.translate(fighter.x, 0); ctx.scale(-1, 1); }
   const cx = flipped ? 0 : fighter.x;
 
+  // special-move aura is a brief VFX, not part of the body — it's allowed
+  // its own color even though the fighter itself stays a flat silhouette
   if (fighter.state === "special") {
     ctx.save();
-    ctx.globalAlpha = 0.28;
+    ctx.globalAlpha = 0.25;
     ctx.fillStyle = weaponColor;
     ctx.beginPath();
     ctx.arc(cx, (headCenterY + hipY) / 2, 46, 0, Math.PI * 2);
@@ -254,8 +246,6 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
     ctx.restore();
   }
 
-  ctx.shadowColor = glowColor;
-  ctx.shadowBlur = flashing ? 16 : 9;
   ctx.fillStyle = bodyColor;
 
   // legs (back leg drawn first so the front leg overlaps it)
@@ -263,11 +253,13 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const kneeB = pointAt(hipB.x, hipB.y, pose.hipB, THIGH);
   const footB = pointAt(kneeB.x, kneeB.y, pose.hipB + pose.kneeB, SHIN);
   limbChain(ctx, hipB, kneeB, footB, [THIGH_W, SHIN_W]);
+  footShape(ctx, footB, SHIN_W[1]);
 
   const hipF = { x: cx + HIP_X + torsoLeanX * 0.3, y: hipY };
   const kneeF = pointAt(hipF.x, hipF.y, pose.hipF, THIGH);
   const footF = pointAt(kneeF.x, kneeF.y, pose.hipF + pose.kneeF, SHIN);
   limbChain(ctx, hipF, kneeF, footF, [THIGH_W, SHIN_W]);
+  footShape(ctx, footF, SHIN_W[1]);
 
   // torso — tapered narrow-hip to wide-shoulder, with rounded caps at each
   // end so the limbs attached at the edges blend into it with no seam
@@ -282,10 +274,11 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const elB = pointAt(shB.x, shB.y, pose.shB, UPPER_ARM);
   const handB = pointAt(elB.x, elB.y, pose.shB + pose.elB, FOREARM);
   limbChain(ctx, shB, elB, handB, [UPPER_ARM_W, FOREARM_W]);
+  cap(ctx, handB, FOREARM_W[1] / 2 + 1);
 
   // head
   const headCenter = { x: shoulderCenter.x, y: headCenterY };
-  cap(ctx, { x: headCenter.x, y: headCenter.y + HEAD_R * 0.7 }, HEAD_R * 0.75); // neck taper into jaw
+  cap(ctx, { x: headCenter.x, y: headCenter.y + HEAD_R * 0.7 }, HEAD_R * 0.7); // neck taper into jaw
   ctx.beginPath();
   ctx.arc(headCenter.x, headCenter.y, HEAD_R, 0, Math.PI * 2);
   ctx.fill();
@@ -295,21 +288,14 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const elF = pointAt(shF.x, shF.y, pose.shF, UPPER_ARM);
   const handF = pointAt(elF.x, elF.y, pose.shF + pose.elF, FOREARM);
   limbChain(ctx, shF, elF, handF, [UPPER_ARM_W, FOREARM_W]);
-
-  ctx.shadowBlur = 0;
-
-  // eye glow — small, reads facing + identity even at a glance
-  ctx.fillStyle = flashing ? "#ffffff" : weaponColor;
-  ctx.beginPath();
-  ctx.arc(headCenter.x + 3.5, headCenter.y - 1, 1.6, 0, Math.PI * 2);
-  ctx.fill();
+  cap(ctx, handF, FOREARM_W[1] / 2 + 1);
 
   // weapon + shield, anchored to the actual hand positions via forward kinematics
   if (!isBlocking) {
-    if (weaponId === "gauntlets") drawWeapon(ctx, handF, 0, "gauntlets", weaponColor);
-    else drawWeapon(ctx, handF, pose.shF + pose.elF, weaponId, weaponColor);
+    if (weaponId === "gauntlets") drawWeapon(ctx, handF, 0, "gauntlets");
+    else drawWeapon(ctx, handF, pose.shF + pose.elF, weaponId);
   }
-  drawShield(ctx, handB, pose.shB + pose.elB, shieldId, shieldColor, isBlocking);
+  drawShield(ctx, handB, pose.shB + pose.elB, shieldId, isBlocking);
 
   ctx.restore();
 
