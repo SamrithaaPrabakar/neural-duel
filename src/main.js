@@ -8,7 +8,10 @@ import {
   defaultStats, statsPointsUsed, deriveCombatProfile, randomLoadout,
 } from "./loadout.js";
 import { sfx, setMuted, isMuted } from "./audio.js";
-import { loadSave, writeSave, clearSave, emptyLifetime } from "./persistence.js";
+import { loadSave, writeSave, clearSave, emptyLifetime, emptyProgress } from "./persistence.js";
+import {
+  TOTAL_LEVELS, arenaForLevel, chapterProgress, levelEpsilonClamp, levelCpuBonusPoints, loadArenaImage,
+} from "./arenas.js";
 
 const ACTIONS = ["moveLeft", "moveRight", "jump", "attack", "heavy", "block", "dash", "special", "idle"];
 const DECISION_INTERVAL = 220;
@@ -22,28 +25,21 @@ const learner = new QLearner(ACTIONS);
 
 const savedGame = loadSave();
 let lifetime = savedGame ? savedGame.lifetime : emptyLifetime();
+let progress = savedGame ? savedGame.progress : emptyProgress();
 if (savedGame && savedGame.qlearner) learner.importState(savedGame.qlearner);
 
 function persistProgress() {
-  writeSave({ qlearner: learner.exportState(), lifetime });
+  writeSave({ qlearner: learner.exportState(), lifetime, progress });
 }
 
 let player = null;
 let cpu = null;
 let playerLoadout = { weapon: "blade", shield: "buckler", stats: defaultStats() };
 
-const DIFFICULTIES = {
-  practice: { name: "Practice", desc: "The CPU leans on exploring over its best-known move — more forgiving, even against a well-trained brain.", color: "#00897B" },
-  normal: { name: "Normal", desc: "The CPU plays at its real, current skill — exactly as trained.", color: "#7C4DFF" },
-  hard: { name: "Hard", desc: "The CPU leans hard on its best-known move over exploring — sharper, less forgiving.", color: "#C62828" },
-};
-let selectedDifficulty = "normal";
-
-function difficultyEpsilon(difficulty, baseEpsilon) {
-  if (difficulty === "practice") return Math.max(baseEpsilon, 0.35);
-  if (difficulty === "hard") return Math.min(baseEpsilon, 0.08);
-  return baseEpsilon;
-}
+// Campaign level currently selected on the level-select screen — defaults to
+// the next unplayed level, but the player can revisit any already-unlocked one.
+let selectedLevel = progress.highestUnlockedLevel;
+let currentArena = arenaForLevel(selectedLevel);
 
 let wins = { player: 0, cpu: 0 };
 let roundOver = false;
@@ -69,7 +65,7 @@ function showScreen(id) {
 
 function clickSound() { sfx.unlock(); sfx.menuClick(); }
 
-document.getElementById("btn-start").onclick = () => { clickSound(); openLoadout(); };
+document.getElementById("btn-start").onclick = () => { clickSound(); openLevelSelect(); };
 document.getElementById("btn-about").onclick = () => { clickSound(); showScreen("screen-about"); };
 document.getElementById("btn-menu").onclick = () => { clickSound(); showScreen("screen-menu"); };
 document.querySelectorAll("[data-back]").forEach((b) => {
@@ -100,6 +96,8 @@ document.getElementById("btn-settings-clear").onclick = () => {
   if (!confirm("Clear all saved progress? This resets the AI's learning and your lifetime win/loss record. This can't be undone.")) return;
   learner.reset();
   lifetime = emptyLifetime();
+  progress = emptyProgress();
+  selectedLevel = 1;
   rewardHistory = [];
   totalReward = 0;
   clearSave();
@@ -112,7 +110,45 @@ function renderSettingsScreen() {
     `${lifetime.wins}W-${lifetime.losses}L (best streak ${lifetime.bestStreak})`;
   document.getElementById("settings-matches").textContent = lifetime.matches;
   document.getElementById("settings-history").textContent = lifetime.history.join(" ") || "–";
+  document.getElementById("settings-campaign").textContent = `Level ${progress.highestUnlockedLevel} / ${TOTAL_LEVELS} unlocked`;
 }
+
+// ============ LEVEL SELECT ============
+function openLevelSelect() {
+  renderLevelSelect();
+  showScreen("screen-levels");
+}
+
+function renderLevelSelect() {
+  document.getElementById("level-progress").textContent =
+    `${progress.highestUnlockedLevel - 1} / ${TOTAL_LEVELS} CLEARED`;
+
+  const wrap = document.getElementById("level-cards");
+  wrap.innerHTML = Array.from({ length: TOTAL_LEVELS }, (_, i) => i + 1).map((lvl) => {
+    const arena = arenaForLevel(lvl);
+    const unlocked = lvl <= progress.highestUnlockedLevel;
+    const cp = chapterProgress(lvl);
+    return `
+      <button class="level-card ${unlocked ? "" : "locked"} ${lvl === selectedLevel ? "selected" : ""}"
+        data-level="${lvl}" ${unlocked ? "" : "disabled"}
+        style="background-image:${unlocked ? `url('${arena.bg}')` : "none"}">
+        <div class="level-card-shade"></div>
+        ${unlocked
+          ? `<div class="level-card-num">${lvl}</div><div class="level-card-theme">${arena.theme} · ${cp.stage}/${cp.of}</div>`
+          : `<div class="level-card-lock">&#128274;</div>`}
+      </button>
+    `;
+  }).join("");
+  wrap.querySelectorAll("[data-level]:not(.locked)").forEach((b) => {
+    b.onclick = () => { clickSound(); selectedLevel = parseInt(b.dataset.level, 10); renderLevelSelect(); };
+  });
+
+  const arena = arenaForLevel(selectedLevel);
+  document.getElementById("level-select-detail").textContent =
+    `LEVEL ${selectedLevel} — ${arena.name.toUpperCase()} (${arena.theme})`;
+}
+
+document.getElementById("btn-level-continue").onclick = () => { clickSound(); openLoadout(); };
 
 // ============ LOADOUT SCREEN ============
 function openLoadout() {
@@ -180,16 +216,9 @@ function renderLoadoutScreen() {
     };
   });
 
-  const diffWrap = document.getElementById("difficulty-cards");
-  diffWrap.innerHTML = Object.entries(DIFFICULTIES).map(([id, d]) => `
-    <button class="pick-card ${selectedDifficulty === id ? "selected" : ""}" data-difficulty="${id}" style="--accent:${d.color}">
-      <div class="pick-name">${d.name}</div>
-      <div class="pick-desc">${d.desc}</div>
-    </button>
-  `).join("");
-  diffWrap.querySelectorAll("[data-difficulty]").forEach((b) => {
-    b.onclick = () => { clickSound(); selectedDifficulty = b.dataset.difficulty; renderLoadoutScreen(); };
-  });
+  const arena = arenaForLevel(selectedLevel);
+  document.getElementById("loadout-level-label").textContent =
+    `LEVEL ${selectedLevel} — ${arena.name.toUpperCase()}`;
 }
 
 document.getElementById("btn-fight").onclick = () => {
@@ -364,8 +393,12 @@ function availableActionsFor(fighter) {
 // ============ MATCH / ROUND FLOW ============
 function startMatch() {
   const pProfile = deriveCombatProfile(playerLoadout);
-  const cLoadout = randomLoadout(Math.random, playerLoadout.weapon);
+  const bonusPoints = levelCpuBonusPoints(selectedLevel);
+  const cLoadout = randomLoadout(Math.random, playerLoadout.weapon, bonusPoints);
   const cProfile = deriveCombatProfile(cLoadout);
+
+  currentArena = arenaForLevel(selectedLevel);
+  loadArenaImage(currentArena);
 
   player = new Fighter(200, 1, "#7fb3d5", pProfile);
   cpu = new Fighter(700, -1, "#d46a6a", cProfile);
@@ -373,7 +406,7 @@ function startMatch() {
   document.getElementById("banner-player").textContent =
     `YOU: ${WEAPONS[playerLoadout.weapon].name} + ${SHIELDS[playerLoadout.shield].name}`;
   document.getElementById("banner-cpu").textContent =
-    `CPU: ${WEAPONS[cLoadout.weapon].name} + ${SHIELDS[cLoadout.shield].name} · ${DIFFICULTIES[selectedDifficulty].name}`;
+    `CPU: ${WEAPONS[cLoadout.weapon].name} + ${SHIELDS[cLoadout.shield].name} · LV ${selectedLevel}`;
 
   wins = { player: 0, cpu: 0 };
   roundOutcomes = [];
@@ -440,6 +473,13 @@ function endRound(playerWon) {
     }
     lifetime.history.push(playerWonMatch ? "W" : "L");
     if (lifetime.history.length > 10) lifetime.history.shift();
+
+    if (playerWonMatch && selectedLevel === progress.highestUnlockedLevel && progress.highestUnlockedLevel < TOTAL_LEVELS) {
+      progress.highestUnlockedLevel++;
+      roundOverText = `LEVEL ${selectedLevel} CLEARED — NEXT ARENA UNLOCKED`;
+    } else if (playerWonMatch && progress.highestUnlockedLevel >= TOTAL_LEVELS && selectedLevel === TOTAL_LEVELS) {
+      roundOverText = "CAMPAIGN COMPLETE!";
+    }
   }
 
   persistProgress();
@@ -517,10 +557,11 @@ function runAI(dt) {
   ai.took = 0;
 
   const wasReady = cpu.meter >= 100;
-  // Difficulty adjusts only how often the CPU explores vs. uses its best-known
-  // move for THIS match — it never touches the real, persisted epsilon/Q-table,
-  // so "Practice"/"Hard" never fake or hide genuine learning progress.
-  const effectiveEpsilon = difficultyEpsilon(selectedDifficulty, learner.epsilon);
+  // The campaign's difficulty curve only clamps how often the CPU explores
+  // vs. uses its best-known move for THIS match — it never touches the real,
+  // persisted epsilon/Q-table, so early/late levels never fake or hide
+  // genuine learning progress.
+  const effectiveEpsilon = levelEpsilonClamp(selectedLevel, learner.epsilon);
   const explored = Math.random() < effectiveEpsilon;
   const action = explored
     ? available[Math.floor(Math.random() * available.length)]
@@ -565,61 +606,139 @@ function update(dt) {
 // ============ RENDER ============
 const INK = "#2b2d3a";
 
-function drawHealthBar(x, hp, maxHp, flip) {
-  const w = 300, h = 18, seg = 10;
-  ctx.fillStyle = "#e7e9f0";
-  ctx.fillRect(x, 20, w, h);
-  const pct = Math.max(0, hp / maxHp);
-  ctx.fillStyle = pct > 0.3 ? "#2ecc8f" : "#ff4fa0";
-  if (flip) ctx.fillRect(x + w * (1 - pct), 20, w * pct, h);
-  else ctx.fillRect(x, 20, w * pct, h);
-  ctx.strokeStyle = "#ffffff";
-  for (let i = 1; i < seg; i++) {
-    const sx = x + (w / seg) * i;
-    ctx.beginPath(); ctx.moveTo(sx, 20); ctx.lineTo(sx, 20 + h); ctx.stroke();
+function roundedRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, h / 2, Math.abs(w) / 2 || r);
+  ctx.beginPath();
+  if (w >= 0) {
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
   }
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = INK;
-  ctx.strokeRect(x, 20, w, h);
+  ctx.closePath();
+}
+
+// Portrait: a dark glass medallion with a simple bust silhouette inside and
+// an accent ring in the fighter's weapon color — same silhouette language
+// as the fighters themselves, no extra art needed.
+function drawPortrait(cx, cy, r, accent) {
+  const bg = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r);
+  bg.addColorStop(0, "#34343c");
+  bg.addColorStop(1, "#0a0a0d");
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = bg; ctx.fill();
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r - 3, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = "#121216";
+  ctx.beginPath(); ctx.arc(cx, cy - r * 0.2, r * 0.42, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.85, r * 0.64, r * 0.55, 0, Math.PI, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = accent;
+  ctx.beginPath(); ctx.arc(cx, cy, r - 1.5, 0, Math.PI * 2); ctx.stroke();
   ctx.lineWidth = 1;
 }
 
-function drawMeterBar(x, fighter, flip) {
-  const w = 300, h = 9;
-  const y = 42;
-  ctx.fillStyle = "#e7e9f0";
-  ctx.fillRect(x, y, w, h);
-  const pct = fighter.meter / 100;
-  ctx.fillStyle = pct >= 1 ? "#ffd23f" : "#4fc3ff";
-  if (flip) ctx.fillRect(x + w * (1 - pct), y, w * pct, h);
-  else ctx.fillRect(x, y, w * pct, h);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = INK;
-  ctx.strokeRect(x, y, w, h);
-  ctx.lineWidth = 1;
-}
+function drawHealthBar(x0, x1, y, hp, maxHp, flip) {
+  const w = x1 - x0, h = 15, r = h / 2;
+  roundedRectPath(ctx, x0, y, w, h, r);
+  ctx.fillStyle = "rgba(8,8,10,0.8)";
+  ctx.fill();
 
-function drawDashPips(x, fighter, flip) {
-  const r = 6;
-  for (let i = 0; i < fighter.profile.dashCharges; i++) {
-    const cx = flip ? x - i * 18 : x + i * 18;
-    ctx.beginPath();
-    ctx.arc(cx, 63, r, 0, Math.PI * 2);
-    ctx.fillStyle = i < fighter.dashCharges ? "#7c4dff" : "#d8dae3";
+  const pct = Math.max(0, hp / maxHp);
+  const fillW = w * pct;
+  if (fillW > 1.5) {
+    const fx = flip ? x1 - fillW : x0;
+    roundedRectPath(ctx, fx, y, fillW, h, r);
+    const grad = ctx.createLinearGradient(fx, 0, fx + fillW, 0);
+    if (pct > 0.5) { grad.addColorStop(0, "#ffc24a"); grad.addColorStop(1, "#ff5a3c"); }
+    else if (pct > 0.25) { grad.addColorStop(0, "#ff8a3a"); grad.addColorStop(1, "#ef3838"); }
+    else { grad.addColorStop(0, "#ff4848"); grad.addColorStop(1, "#b8141e"); }
+    ctx.fillStyle = grad;
     ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = INK;
+  }
+  roundedRectPath(ctx, x0, y, w, h, r);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.stroke();
+  ctx.lineWidth = 1;
+}
+
+function drawMeterBar(x0, x1, y, fighter, flip) {
+  const w = x1 - x0, h = 7, r = h / 2;
+  roundedRectPath(ctx, x0, y, w, h, r);
+  ctx.fillStyle = "rgba(8,8,10,0.75)";
+  ctx.fill();
+  const pct = fighter.meter / 100;
+  const fillW = w * pct;
+  if (fillW > 1.5) {
+    const fx = flip ? x1 - fillW : x0;
+    roundedRectPath(ctx, fx, y, fillW, h, r);
+    ctx.fillStyle = pct >= 1 ? "#ffd23f" : "#4fc3ff";
+    ctx.fill();
+  }
+  roundedRectPath(ctx, x0, y, w, h, r);
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.stroke();
+  ctx.lineWidth = 1;
+}
+
+function drawDashPips(x, y, fighter, flip) {
+  const r = 4.5;
+  for (let i = 0; i < fighter.profile.dashCharges; i++) {
+    const cx = flip ? x - i * 14 : x + i * 14;
+    ctx.beginPath();
+    ctx.arc(cx, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = i < fighter.dashCharges ? "#7c4dff" : "rgba(255,255,255,0.2)";
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
     ctx.stroke();
     ctx.lineWidth = 1;
   }
 }
 
-// Atmospheric arena: dark moody sky, a glowing horizon core with god-rays,
-// three parallax layers of silhouette pillars, and a dim rim-lit ground —
-// the dramatic backdrop the silhouette fighters are read against. The
-// bright, colorful chrome (menu/settings/loadout) is untouched by this;
-// the mood is scoped to the fight itself.
-function drawArena(ctx, t) {
+function drawRoundPips(cx, y, wonCount, flip) {
+  const r = 5, gap = 14;
+  for (let i = 0; i < ROUNDS_TO_WIN; i++) {
+    const px = cx + (flip ? -1 : 1) * (14 + i * gap);
+    ctx.beginPath();
+    ctx.arc(px, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = i < wonCount ? "#ffd23f" : "rgba(255,255,255,0.18)";
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+}
+
+// Painted per-arena background art (see arenas.js), cover-fit into the
+// canvas with a soft dark gradient over it so the HUD and fighters stay
+// legible. Falls back to a procedural moody backdrop for the handful of
+// frames before the image has decoded (or if it fails to load).
+function drawArenaBackground(ctx) {
+  const W = PHYSICS.ARENA_WIDTH, H = PHYSICS.ARENA_HEIGHT;
+  const img = currentArena ? loadArenaImage(currentArena) : null;
+  if (img && img.complete && img.naturalWidth > 0) {
+    const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+    const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+    ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, "rgba(10,6,14,0.45)");
+    grd.addColorStop(0.35, "rgba(10,6,14,0.05)");
+    grd.addColorStop(1, "rgba(10,6,14,0.3)");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    drawProceduralArenaFallback(ctx, performance.now());
+  }
+}
+
+function drawProceduralArenaFallback(ctx, t) {
   const W = PHYSICS.ARENA_WIDTH, H = PHYSICS.ARENA_HEIGHT, GY = PHYSICS.GROUND_Y;
   const cx = W / 2, coreY = GY - 30;
 
@@ -694,44 +813,56 @@ function render() {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
-  drawArena(ctx, performance.now());
+  drawArenaBackground(ctx);
 
   drawFighterSprite(ctx, player, { isCpu: false });
   const glitchIntensity = Math.max(0, (learner.epsilon - 0.08)) * 0.9;
   drawFighterSprite(ctx, cpu, { isCpu: true, glitchIntensity });
   particles.draw(ctx);
 
-  drawHealthBar(20, player.hp, player.maxHp, false);
-  drawMeterBar(20, player, false);
-  drawDashPips(20, player, false);
+  const W = PHYSICS.ARENA_WIDTH;
+  drawPortrait(50, 50, 28, player.profile.color);
+  drawHealthBar(90, 356, 30, player.hp, player.maxHp, false);
+  drawMeterBar(90, 356, 49, player, false);
+  drawDashPips(90, 62, player, false);
+  drawRoundPips(22, 82, wins.player, false);
 
-  drawHealthBar(PHYSICS.ARENA_WIDTH - 320, cpu.hp, cpu.maxHp, true);
-  drawMeterBar(PHYSICS.ARENA_WIDTH - 320, cpu, true);
-  drawDashPips(PHYSICS.ARENA_WIDTH - 20, cpu, true);
+  drawPortrait(W - 50, 50, 28, cpu.profile.color);
+  drawHealthBar(W - 356, W - 90, 30, cpu.hp, cpu.maxHp, true);
+  drawMeterBar(W - 356, W - 90, 49, cpu, true);
+  drawDashPips(W - 90, 62, cpu, true);
+  drawRoundPips(W - 22, 82, wins.cpu, true);
 
-  ctx.fillStyle = "#fff";
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  ctx.font = "bold 18px 'Press Start 2P', monospace";
+  // center badge: campaign level number in a dark rounded pill
+  ctx.font = "bold 15px 'Rajdhani', 'Baloo 2', sans-serif";
   ctx.textAlign = "center";
-  ctx.strokeText(`${wins.player} - ${wins.cpu}`, PHYSICS.ARENA_WIDTH / 2, 36);
-  ctx.fillText(`${wins.player} - ${wins.cpu}`, PHYSICS.ARENA_WIDTH / 2, 36);
+  const badgeText = `LV ${selectedLevel}`;
+  const badgeW = ctx.measureText(badgeText).width + 28;
+  roundedRectPath(ctx, W / 2 - badgeW / 2, 22, badgeW, 28, 14);
+  ctx.fillStyle = "rgba(8,8,10,0.75)";
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.stroke();
   ctx.lineWidth = 1;
+  ctx.fillStyle = "#ffd23f";
+  ctx.fillText(badgeText, W / 2, 41);
 
   if (roundOver) {
-    ctx.fillStyle = "rgba(43,45,58,0.55)";
-    ctx.fillRect(0, 0, PHYSICS.ARENA_WIDTH, PHYSICS.ARENA_HEIGHT);
+    ctx.fillStyle = "rgba(8,6,12,0.6)";
+    ctx.fillRect(0, 0, W, PHYSICS.ARENA_HEIGHT);
     ctx.fillStyle = "#ffd23f";
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 4;
-    ctx.font = "bold 28px 'Press Start 2P', monospace";
-    ctx.strokeText(roundOverText, PHYSICS.ARENA_WIDTH / 2, PHYSICS.ARENA_HEIGHT / 2);
-    ctx.fillText(roundOverText, PHYSICS.ARENA_WIDTH / 2, PHYSICS.ARENA_HEIGHT / 2);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 5;
+    ctx.font = "800 30px 'Rajdhani', 'Baloo 2', sans-serif";
+    ctx.textAlign = "center";
+    ctx.strokeText(roundOverText, W / 2, PHYSICS.ARENA_HEIGHT / 2);
+    ctx.fillText(roundOverText, W / 2, PHYSICS.ARENA_HEIGHT / 2);
     ctx.lineWidth = 1;
     if (matchOver) {
-      ctx.font = "16px 'Baloo 2', sans-serif";
+      ctx.font = "600 16px 'Baloo 2', sans-serif";
       ctx.fillStyle = "#e7e7ef";
-      ctx.fillText("Press R for a new match", PHYSICS.ARENA_WIDTH / 2, PHYSICS.ARENA_HEIGHT / 2 + 40);
+      ctx.fillText("Press R for a new match", W / 2, PHYSICS.ARENA_HEIGHT / 2 + 40);
     }
   }
   ctx.restore();
@@ -797,7 +928,11 @@ document.getElementById("btn-reset-brain").onclick = () => {
   totalReward = 0;
   persistProgress();
 };
-document.getElementById("btn-new-match").onclick = () => { clickSound(); openLoadout(); };
+document.getElementById("btn-new-match").onclick = () => {
+  clickSound();
+  selectedLevel = progress.highestUnlockedLevel;
+  openLevelSelect();
+};
 
 renderLoadoutScreen();
 showScreen("screen-menu");

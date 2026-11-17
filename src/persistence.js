@@ -8,6 +8,10 @@ export function emptyLifetime() {
   return { matches: 0, wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, history: [] };
 }
 
+export function emptyProgress() {
+  return { highestUnlockedLevel: 1 };
+}
+
 export function loadSave() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -17,18 +21,22 @@ export function loadSave() {
     const lifetime = parsed.lifetime && typeof parsed.lifetime === "object"
       ? { ...emptyLifetime(), ...parsed.lifetime, history: Array.isArray(parsed.lifetime.history) ? parsed.lifetime.history : [] }
       : emptyLifetime();
+    const progress = parsed.progress && typeof parsed.progress === "object"
+      ? { ...emptyProgress(), ...parsed.progress }
+      : emptyProgress();
     return {
       qlearner: parsed.qlearner && typeof parsed.qlearner === "object" ? parsed.qlearner : null,
       lifetime,
+      progress,
     };
   } catch {
     return null;
   }
 }
 
-export function writeSave({ qlearner, lifetime }) {
+export function writeSave({ qlearner, lifetime, progress }) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, qlearner, lifetime }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, qlearner, lifetime, progress }));
     return true;
   } catch {
     return false;

@@ -164,7 +164,12 @@ export class Fighter {
       else if (input.block && this.profile.hasBlock) {
         this.startAction("block");
         this.blockElapsed += dt;
-        this.vx = 0;
+        // Guarding isn't a total freeze — you can still shuffle forward or
+        // retreat behind the shield, just slower than an open stance.
+        const guardSpeed = PHYSICS.BASE_MOVE_SPEED * this.profile.moveSpeedMult * 0.5;
+        if (input.left && !input.right) this.vx = -guardSpeed;
+        else if (input.right && !input.left) this.vx = guardSpeed;
+        else this.vx = 0;
       } else {
         if (this.state === "block") this.state = "idle";
         if (input.jump) this.startAction("jump");

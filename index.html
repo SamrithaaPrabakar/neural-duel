@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="An AI opponent that learns to fight you — live, via Q-learning." />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;800&family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -78,6 +78,8 @@
             <div class="stat-row"><span>Matches played</span><b id="settings-matches">–</b></div>
             <div class="stat-row"><span>Recent matches</span><b id="settings-history">–</b></div>
 
+            <div class="stat-row"><span>Campaign</span><b id="settings-campaign">–</b></div>
+
             <button id="btn-settings-clear" class="btn btn-ghost">CLEAR ALL PROGRESS</button>
           </div>
           <button class="btn btn-ghost back-btn" data-back="screen-menu">BACK</button>
@@ -105,10 +107,25 @@
         </div>
       </section>
 
+      <!-- LEVEL SELECT -->
+      <section id="screen-levels" class="screen hidden">
+        <div class="loadout-wrap levels-wrap">
+          <h2>CAMPAIGN</h2>
+          <p class="sub" id="level-progress">0 / 30 CLEARED</p>
+          <div id="level-cards" class="level-grid"></div>
+          <div class="level-select-footer">
+            <span id="level-select-detail">LEVEL 1</span>
+            <button id="btn-level-continue" class="btn btn-primary">CHOOSE LOADOUT</button>
+          </div>
+          <button class="btn btn-ghost back-btn" data-back="screen-menu">BACK</button>
+        </div>
+      </section>
+
       <!-- LOADOUT -->
       <section id="screen-loadout" class="screen hidden">
         <div class="loadout-wrap">
           <h2>CHOOSE YOUR LOADOUT</h2>
+          <p class="sub" id="loadout-level-label">LEVEL 1</p>
 
           <div class="loadout-section">
             <h3>WEAPON</h3>
@@ -123,11 +140,6 @@
           <div class="loadout-section">
             <h3>STRENGTHS <span class="points-left">(<span id="points-left">0</span> points left)</span></h3>
             <div id="stat-rows" class="stat-alloc"></div>
-          </div>
-
-          <div class="loadout-section">
-            <h3>DIFFICULTY</h3>
-            <div id="difficulty-cards" class="card-row"></div>
           </div>
 
           <button id="btn-fight" class="btn btn-primary">FIGHT!</button>

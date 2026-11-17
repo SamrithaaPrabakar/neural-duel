@@ -86,7 +86,7 @@ export function deriveCombatProfile(loadout) {
   };
 }
 
-export function randomLoadout(rng = Math.random, excludeWeapon = null) {
+export function randomLoadout(rng = Math.random, excludeWeapon = null, bonusPoints = 0) {
   const allWeaponIds = Object.keys(WEAPONS);
   const weaponIds = excludeWeapon && allWeaponIds.length > 1
     ? allWeaponIds.filter((id) => id !== excludeWeapon)
@@ -94,7 +94,7 @@ export function randomLoadout(rng = Math.random, excludeWeapon = null) {
   const shieldIds = Object.keys(SHIELDS);
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
   const stats = defaultStats();
-  let remaining = STAT_POOL - statsPointsUsed(stats);
+  let remaining = STAT_POOL + bonusPoints - statsPointsUsed(stats);
   const keys = ["power", "speed", "vitality"];
   while (remaining > 0) {
     const k = pick(keys);
