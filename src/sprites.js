@@ -15,18 +15,26 @@
 const BODY_INK = "#101118";
 const FLASH_WHITE = "#ffffff";
 
-const HEAD_R = 10;
+const HEAD_R = 11;
 const NECK = 5;
 const TORSO_LEN = 32;
-const SHOULDER_X = 8;
-const HIP_X = 6;
+const SHOULDER_X = 13;
+const HIP_X = 9;
 const UPPER_ARM = 19;
 const FOREARM = 17;
 const THIGH = 23;
 const SHIN = 21;
-const ARM_W = 9;
-const LEG_W = 11;
-const TORSO_W = 15;
+
+// Tapered widths (wide end -> narrow end) for each limb segment, so a limb
+// reads as an actual tapering arm/leg of flesh rather than a uniform-width
+// stick — this is what makes the silhouette read as a real body instead of
+// a wireframe rig.
+const TORSO_W_HIP = 22;
+const TORSO_W_SHOULDER = 30;
+const UPPER_ARM_W = [14, 10];
+const FOREARM_W = [10, 7];
+const THIGH_W = [18, 14];
+const SHIN_W = [13, 9];
 
 // Angles are radians from straight-down, rotating toward +x (the facing
 // direction) for positive values. F = front limb (weapon side), B = back
@@ -71,14 +79,37 @@ function pointAt(x0, y0, angle, length) {
   return { x: x0 + Math.sin(angle) * length, y: y0 + Math.cos(angle) * length };
 }
 
-function strokeSeg(ctx, p0, p1, width, color) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.lineCap = "round";
+// Filled, tapered quad from p0 (width w0) to p1 (width w1) — a solid wedge
+// of "flesh" rather than a uniform stroke, so limbs actually taper like a
+// real arm or leg instead of reading as a stick-figure rig.
+function tapered(ctx, p0, p1, w0, w1) {
+  const dx = p1.x - p0.x, dy = p1.y - p0.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  const h0x = (nx * w0) / 2, h0y = (ny * w0) / 2;
+  const h1x = (nx * w1) / 2, h1y = (ny * w1) / 2;
   ctx.beginPath();
-  ctx.moveTo(p0.x, p0.y);
-  ctx.lineTo(p1.x, p1.y);
-  ctx.stroke();
+  ctx.moveTo(p0.x + h0x, p0.y + h0y);
+  ctx.lineTo(p1.x + h1x, p1.y + h1y);
+  ctx.lineTo(p1.x - h1x, p1.y - h1y);
+  ctx.lineTo(p0.x - h0x, p0.y - h0y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// A round cap at a joint so two tapered segments blend into one continuous
+// silhouette instead of showing a notch at the bend.
+function cap(ctx, p, r) {
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function limbChain(ctx, p0, p1, p2, w) {
+  tapered(ctx, p0, p1, w[0][0], w[0][1]);
+  cap(ctx, p1, w[0][1] / 2);
+  tapered(ctx, p1, p2, w[1][0], w[1][1]);
+  cap(ctx, p2, w[1][1] / 2);
 }
 
 function drawWeapon(ctx, hand, armAngle, weaponId, color) {
@@ -225,35 +256,36 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
 
   ctx.shadowColor = glowColor;
   ctx.shadowBlur = flashing ? 16 : 9;
+  ctx.fillStyle = bodyColor;
 
   // legs (back leg drawn first so the front leg overlaps it)
   const hipB = { x: cx - HIP_X + torsoLeanX * 0.3, y: hipY };
   const kneeB = pointAt(hipB.x, hipB.y, pose.hipB, THIGH);
   const footB = pointAt(kneeB.x, kneeB.y, pose.hipB + pose.kneeB, SHIN);
-  strokeSeg(ctx, hipB, kneeB, LEG_W, bodyColor);
-  strokeSeg(ctx, kneeB, footB, LEG_W * 0.85, bodyColor);
+  limbChain(ctx, hipB, kneeB, footB, [THIGH_W, SHIN_W]);
 
   const hipF = { x: cx + HIP_X + torsoLeanX * 0.3, y: hipY };
   const kneeF = pointAt(hipF.x, hipF.y, pose.hipF, THIGH);
   const footF = pointAt(kneeF.x, kneeF.y, pose.hipF + pose.kneeF, SHIN);
-  strokeSeg(ctx, hipF, kneeF, LEG_W, bodyColor);
-  strokeSeg(ctx, kneeF, footF, LEG_W * 0.85, bodyColor);
+  limbChain(ctx, hipF, kneeF, footF, [THIGH_W, SHIN_W]);
 
-  // torso
+  // torso — tapered narrow-hip to wide-shoulder, with rounded caps at each
+  // end so the limbs attached at the edges blend into it with no seam
   const hipCenter = { x: cx + torsoLeanX * 0.3, y: hipY };
   const shoulderCenter = { x: cx + torsoLeanX, y: shoulderY };
-  strokeSeg(ctx, hipCenter, shoulderCenter, TORSO_W, bodyColor);
+  tapered(ctx, hipCenter, shoulderCenter, TORSO_W_HIP, TORSO_W_SHOULDER);
+  cap(ctx, hipCenter, TORSO_W_HIP / 2);
+  cap(ctx, shoulderCenter, TORSO_W_SHOULDER / 2);
 
   // back arm (behind torso)
   const shB = { x: shoulderCenter.x - SHOULDER_X, y: shoulderCenter.y };
   const elB = pointAt(shB.x, shB.y, pose.shB, UPPER_ARM);
   const handB = pointAt(elB.x, elB.y, pose.shB + pose.elB, FOREARM);
-  strokeSeg(ctx, shB, elB, ARM_W, bodyColor);
-  strokeSeg(ctx, elB, handB, ARM_W * 0.85, bodyColor);
+  limbChain(ctx, shB, elB, handB, [UPPER_ARM_W, FOREARM_W]);
 
   // head
   const headCenter = { x: shoulderCenter.x, y: headCenterY };
-  ctx.fillStyle = bodyColor;
+  cap(ctx, { x: headCenter.x, y: headCenter.y + HEAD_R * 0.7 }, HEAD_R * 0.75); // neck taper into jaw
   ctx.beginPath();
   ctx.arc(headCenter.x, headCenter.y, HEAD_R, 0, Math.PI * 2);
   ctx.fill();
@@ -262,8 +294,7 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const shF = { x: shoulderCenter.x + SHOULDER_X, y: shoulderCenter.y };
   const elF = pointAt(shF.x, shF.y, pose.shF, UPPER_ARM);
   const handF = pointAt(elF.x, elF.y, pose.shF + pose.elF, FOREARM);
-  strokeSeg(ctx, shF, elF, ARM_W, bodyColor);
-  strokeSeg(ctx, elF, handF, ARM_W * 0.85, bodyColor);
+  limbChain(ctx, shF, elF, handF, [UPPER_ARM_W, FOREARM_W]);
 
   ctx.shadowBlur = 0;
 
