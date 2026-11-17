@@ -309,6 +309,8 @@ const OUTLINE_DIRS = [
 const POSE_SPRITE_SRC = {
   idle: "art/fighter/idle.png",
   attack: "art/fighter/attack.png",
+  heavy: "art/fighter/heavy.png",
+  block: "art/fighter/block.png",
 };
 const poseSprites = {};
 for (const [key, src] of Object.entries(POSE_SPRITE_SRC)) {
