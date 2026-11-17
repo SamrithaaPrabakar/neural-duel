@@ -146,11 +146,16 @@ function limbChain(ctx, p0, p1, p2, w, bulge) {
   cap(ctx, p2, w[1][1]);
 }
 
+// Weapons/shields get their loadout's accent color plus a thin dark edge —
+// otherwise a flat silhouette-black weapon is invisible against a flat
+// silhouette-black body, which is exactly what was happening.
 function drawWeapon(ctx, hand, armAngle, weaponId, fillColor) {
   ctx.save();
   ctx.translate(hand.x, hand.y);
   ctx.rotate(armAngle);
   ctx.fillStyle = fillColor;
+  ctx.strokeStyle = "rgba(0,0,0,0.65)";
+  ctx.lineWidth = 1;
 
   if (weaponId === "blade") {
     ctx.beginPath();
@@ -161,6 +166,7 @@ function drawWeapon(ctx, hand, armAngle, weaponId, fillColor) {
     ctx.lineTo(-1.8, 46);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   } else if (weaponId === "spear") {
     ctx.beginPath();
     ctx.moveTo(-1.8, 0);
@@ -170,10 +176,12 @@ function drawWeapon(ctx, hand, armAngle, weaponId, fillColor) {
     ctx.lineTo(-1.8, 58);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   } else if (weaponId === "gauntlets") {
     ctx.beginPath();
     ctx.arc(0, 4, 7.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -186,12 +194,15 @@ function drawShield(ctx, hand, armAngle, shieldId, isBlocking, fillColor) {
   ctx.translate(hand.x, hand.y);
   ctx.rotate(armAngle * 0.3);
   ctx.fillStyle = fillColor;
+  ctx.strokeStyle = "rgba(0,0,0,0.65)";
+  ctx.lineWidth = 1;
 
   if (shieldId === "buckler") {
     const r = 11 * scale;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
   } else if (shieldId === "tower") {
     const w = 17 * scale, h = 34 * scale;
     ctx.beginPath();
@@ -202,6 +213,7 @@ function drawShield(ctx, hand, armAngle, shieldId, isBlocking, fillColor) {
     ctx.lineTo(-w / 2, h / 2 - 7);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -374,7 +386,23 @@ function drawSilhouetteSource(ctx, src, srcW, srcH, destX, destY, destW, destH, 
 // jump in scale.
 const CHAR_H = (HEAD_R * 2 + NECK + TORSO_LEN + THIGH + SHIN) * RENDER_SCALE;
 
-function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity, poseKey, weaponColor) {
+// Hand anchor points, in each sprite's own native pixel space (found by
+// locating the fist/hand as an extremal point of its silhouette), plus the
+// forearm angle to rotate a weapon/shield by at that point — same angle
+// convention as the procedural rig (0 = straight down, +pi/2 = straight
+// toward the facing direction). `front` carries the weapon, `back` the
+// shield. Hitstun has no entry: mid-stagger, no weapon is drawn.
+const HAND_ANCHORS = {
+  idle:    { front: { x: 471, y: 168, angle: 0.3 },  back: { x: 210, y: 433, angle: 0.3 } },
+  attack:  { front: { x: 616, y: 178, angle: 1.45 }, back: { x: 187, y: 252, angle: 0.3 } },
+  heavy:   { front: { x: 877, y: 253, angle: 1.5 },  back: { x: 69,  y: 290, angle: 0.3 } },
+  block:   { front: { x: 522, y: 173, angle: -0.3 }, back: { x: 397, y: 280, angle: 0.2 } },
+  special: { front: { x: 675, y: 140, angle: 1.3 },  back: { x: 126, y: 313, angle: 0.3 } },
+  dash:    { front: { x: 801, y: 216, angle: 1.0 },  back: { x: 270, y: 324, angle: 0.3 } },
+  jump:    { front: { x: 529, y: 344, angle: 0.5 },  back: { x: 183, y: 287, angle: 0.3 } },
+};
+
+function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity, poseKey, weaponId, shieldId, weaponColor, shieldColor) {
   const srcW = img.naturalWidth, srcH = img.naturalHeight;
   const destH = CHAR_H;
   const destW = destH * (srcW / srcH);
@@ -402,6 +430,30 @@ function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity, pos
 
   drawSilhouetteSource(ctx, img, srcW, srcH, destX, destY, destW, destH, flashing);
 
+  // Weapon/shield, anchored to this specific sprite's own hand positions —
+  // drawn in the same flat body color so they read as part of the
+  // silhouette, same convention as the procedural rig.
+  const anchors = HAND_ANCHORS[poseKey];
+  if (anchors) {
+    const scale = destH / srcH;
+    const isBlocking = poseKey === "block";
+    if (!isBlocking) {
+      const p = anchors.front;
+      const angle = weaponId === "gauntlets" ? 0 : p.angle;
+      ctx.save();
+      ctx.translate(destX + p.x * scale, destY + p.y * scale);
+      ctx.scale(RENDER_SCALE, RENDER_SCALE);
+      drawWeapon(ctx, { x: 0, y: 0 }, angle, weaponId, weaponColor);
+      ctx.restore();
+    }
+    const p2 = anchors.back;
+    ctx.save();
+    ctx.translate(destX + p2.x * scale, destY + p2.y * scale);
+    ctx.scale(RENDER_SCALE, RENDER_SCALE);
+    drawShield(ctx, { x: 0, y: 0 }, p2.angle, shieldId, isBlocking, shieldColor);
+    ctx.restore();
+  }
+
   ctx.restore();
 
   if (isCpu && glitchIntensity > 0) {
@@ -418,8 +470,11 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   // deliberate, visible seam for now, not a bug.
   const sprite = poseSprites[poseKey];
   if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+    const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
+    const shieldId = fighter.profile ? fighter.profile.shield.id : "buckler";
     const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
-    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity, poseKey, weaponColor);
+    const shieldColor = fighter.profile ? fighter.profile.shieldColor : "#9ad1ff";
+    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity, poseKey, weaponId, shieldId, weaponColor, shieldColor);
     return;
   }
 
@@ -428,17 +483,20 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
   const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
   const shieldId = fighter.profile ? fighter.profile.shield.id : "buckler";
+  const shieldColor = fighter.profile ? fighter.profile.shieldColor : "#9ad1ff";
   const isBlocking = fighter.state === "block";
   const bodyColor = flashing ? FLASH_WHITE : SILHOUETTE;
 
-  // --- build the right-facing body + weapon/shield on the offscreen canvas ---
+  // --- build the right-facing body on the offscreen canvas; weapon/shield
+  // get their loadout's accent color (drawn after the rim-light pass below
+  // picks up the body's own dilated outline, so they stay crisp on top) ---
   offCtx.clearRect(0, 0, OFF_W, OFF_H);
   const joints = buildBody(offCtx, pose, poseKey, bodyColor);
   if (!isBlocking) {
-    if (weaponId === "gauntlets") drawWeapon(offCtx, joints.handF, 0, "gauntlets", bodyColor);
-    else drawWeapon(offCtx, joints.handF, pose.shF + pose.elF, weaponId, bodyColor);
+    if (weaponId === "gauntlets") drawWeapon(offCtx, joints.handF, 0, "gauntlets", weaponColor);
+    else drawWeapon(offCtx, joints.handF, pose.shF + pose.elF, weaponId, weaponColor);
   }
-  drawShield(offCtx, joints.handB, pose.shB + pose.elB, shieldId, isBlocking, bodyColor);
+  drawShield(offCtx, joints.handB, pose.shB + pose.elB, shieldId, isBlocking, shieldColor);
 
   ctx.save();
   if (fighter.invulnerable) ctx.globalAlpha = 0.55;
