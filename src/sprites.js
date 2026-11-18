@@ -490,12 +490,14 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const poseKey = poseFor(fighter);
   const flashing = fighter.flashTimer > 0;
 
-  // A pose with real illustrated art uses it once loaded. There's no
-  // dedicated walk-cycle art, so walking borrows the idle art rather than
-  // dropping to the procedural rig — that rig is only the last-resort
-  // fallback below, for the moment before any art has finished loading.
+  // Every fighter — whichever weapon its stats actually come from — wears
+  // the same illustrated gold sword + shield: the weapon dropdown still
+  // picks range/damage/speed, it just no longer picks a different look.
+  // There's no dedicated walk-cycle art, so walking borrows the idle art
+  // rather than dropping to the procedural rig below, which is now only
+  // the last-resort fallback for the moment before art finishes loading.
   const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
-  const setKey = SPRITE_SETS[weaponId] ? weaponId : "base";
+  const setKey = "sword";
   const spriteKey = poseKey === "walk" ? "idle" : poseKey;
   const sprite = poseSprites[setKey][spriteKey];
   if (sprite && sprite.complete && sprite.naturalWidth > 0) {
