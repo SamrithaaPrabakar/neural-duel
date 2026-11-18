@@ -1,21 +1,19 @@
-// Campaign structure: 30 levels grouped into themed chapters of 10, each
-// chapter reusing one arena backdrop (the same way a real fighting game
-// reuses a handful of locations across many story levels, rather than
-// painting 30 unique ones). Beating the current highest-unlocked level
-// unlocks the next; progress is persisted (see persistence.js).
+// Campaign structure: 30 levels, cycling through the 3 arenas one level at
+// a time (level 1 Greece, 2 China, 3 Japan, 4 Greece, ...) rather than in
+// big 10-level blocks. Beating the current highest-unlocked level unlocks
+// the next; progress is persisted (see persistence.js).
 //
 // The arena itself is drawn procedurally (see main.js's drawArena), not
 // from a photo/illustration file — a flat side-on stage, always rendered
 // locally, that stays readable behind a silhouette fighter and never
 // depends on an external image-generation quota. THEME_PALETTES is what
-// gives each chapter its own color identity within that one procedural
-// look.
+// gives each arena its own color identity within that one procedural look.
 
 export const TOTAL_LEVELS = 30;
 
 export const ARENAS = [
-  { id: "china", name: "Imperial Palace", theme: "China" },
   { id: "greece", name: "Ruins of Olympus", theme: "Greece" },
+  { id: "china", name: "Imperial Palace", theme: "China" },
   { id: "japan", name: "Autumn Shrine", theme: "Japan" },
 ];
 
@@ -49,16 +47,13 @@ export const THEME_PALETTES = {
   },
 };
 
-const LEVELS_PER_CHAPTER = Math.ceil(TOTAL_LEVELS / ARENAS.length);
-
 export function arenaForLevel(level) {
-  const chapter = Math.min(ARENAS.length - 1, Math.floor((level - 1) / LEVELS_PER_CHAPTER));
-  return ARENAS[chapter];
+  return ARENAS[(level - 1) % ARENAS.length];
 }
 
 export function chapterProgress(level) {
-  const idx = (level - 1) % LEVELS_PER_CHAPTER;
-  return { stage: idx + 1, of: LEVELS_PER_CHAPTER };
+  const idx = (level - 1) % ARENAS.length;
+  return { stage: idx + 1, of: ARENAS.length };
 }
 
 // Difficulty curve across the campaign: early levels force the CPU's
