@@ -3,18 +3,19 @@
 // big 10-level blocks. Beating the current highest-unlocked level unlocks
 // the next; progress is persisted (see persistence.js).
 //
-// The arena itself is drawn procedurally (see main.js's drawArena), not
-// from a photo/illustration file — a flat side-on stage, always rendered
-// locally, that stays readable behind a silhouette fighter and never
-// depends on an external image-generation quota. THEME_PALETTES is what
-// gives each arena its own color identity within that one procedural look.
+// Each arena's `bg` is a real illustrated backdrop (see main.js's
+// drawArena), layered with a procedural readability band, drifting embers,
+// and a ground rim so the silhouette fighters stay legible in front of it
+// regardless of how busy or dark the art gets. THEME_PALETTES gives the
+// procedural layer its matching color identity, and is also the fallback
+// look for the brief moment before an arena's image has loaded.
 
 export const TOTAL_LEVELS = 30;
 
 export const ARENAS = [
-  { id: "greece", name: "Ruins of Olympus", theme: "Greece" },
-  { id: "china", name: "Imperial Palace", theme: "China" },
-  { id: "japan", name: "Autumn Shrine", theme: "Japan" },
+  { id: "greece", name: "Ruins of Olympus", theme: "Greece", bg: "art/arenas/greece.jpg" },
+  { id: "china", name: "Imperial Palace", theme: "China", bg: "art/arenas/china.jpg" },
+  { id: "japan", name: "Autumn Shrine", theme: "Japan", bg: "art/arenas/japan.jpg" },
 ];
 
 export const THEME_PALETTES = {
@@ -25,7 +26,6 @@ export const THEME_PALETTES = {
     ground: "#210f0f",
     rim: "rgba(255,180,120,0.55)",
     ember: "255,170,90",
-    cardGradient: "linear-gradient(160deg, #6e2222, #1a0a0d)",
   },
   Greece: {
     sky: ["#0a1222", "#17243f", "#3a567e"],
@@ -34,7 +34,6 @@ export const THEME_PALETTES = {
     ground: "#121722",
     rim: "rgba(210,225,255,0.5)",
     ember: "220,230,255",
-    cardGradient: "linear-gradient(160deg, #3a567e, #0a1222)",
   },
   Japan: {
     sky: ["#120a1f", "#2a1438", "#6a2f3a"],
@@ -43,7 +42,6 @@ export const THEME_PALETTES = {
     ground: "#1a1420",
     rim: "rgba(255,200,140,0.55)",
     ember: "255,200,120",
-    cardGradient: "linear-gradient(160deg, #6a2f3a, #120a1f)",
   },
 };
 

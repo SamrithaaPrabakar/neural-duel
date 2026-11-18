@@ -10,8 +10,18 @@ import {
 import { sfx, setMuted, isMuted } from "./audio.js";
 import { loadSave, writeSave, clearSave, emptyLifetime, emptyProgress, emptyWallet } from "./persistence.js";
 import {
-  TOTAL_LEVELS, arenaForLevel, chapterProgress, levelEpsilonClamp, levelCpuBonusPoints, THEME_PALETTES,
+  TOTAL_LEVELS, ARENAS, arenaForLevel, chapterProgress, levelEpsilonClamp, levelCpuBonusPoints, THEME_PALETTES,
 } from "./arenas.js";
+
+// Each arena's backdrop image, preloaded once and kept by id so drawArena
+// can draw it the instant it's ready and fall back to the procedural sky
+// (see THEME_PALETTES) until then.
+const arenaImages = {};
+for (const arena of ARENAS) {
+  const img = new Image();
+  img.src = arena.bg;
+  arenaImages[arena.id] = img;
+}
 
 const ACTIONS = ["moveLeft", "moveRight", "jump", "attack", "heavy", "block", "dash", "special", "idle"];
 const DECISION_INTERVAL = 220;
@@ -171,11 +181,11 @@ function renderLevelSelect() {
     const arena = arenaForLevel(lvl);
     const unlocked = lvl <= progress.highestUnlockedLevel;
     const cp = chapterProgress(lvl);
-    const theme = THEME_PALETTES[arena.theme];
+    const cardBg = unlocked ? `url(${arena.bg})` : "none";
     return `
       <button class="level-card ${unlocked ? "" : "locked"} ${lvl === selectedLevel ? "selected" : ""}"
         data-level="${lvl}" ${unlocked ? "" : "disabled"}
-        style="background-image:${unlocked ? theme.cardGradient : "none"}">
+        style="background-image:${cardBg}">
         <div class="level-card-shade"></div>
         ${unlocked
           ? `<div class="level-card-num">${lvl}</div><div class="level-card-theme">${arena.theme} · ${cp.stage}/${cp.of}</div>`
@@ -819,38 +829,69 @@ function drawRoundPips(cx, y, wonCount, flip) {
   }
 }
 
-// The arena is drawn procedurally, every frame, locally — no external
-// image file and no generation-service quota to wait on. It's a flat,
-// side-on, eye-level stage (sky band, a ring of columns, a ground line)
-// with the two fighters standing center-ground, same framing a movie fight
-// scene or a real 2D fighting game uses — not a single-point architectural
-// perspective shot. THEME_PALETTES (arenas.js) swaps its color identity per
-// campaign chapter without changing that composition. A bright "stage"
-// glow band sits right at the fighters' height so the silhouettes stay
-// readable no matter how dark the rest of the scene gets, and embers drift
-// up through the whole scene for a bit of life.
+// Each arena draws its own illustrated backdrop image, cover-fit behind a
+// flat, side-on, eye-level stage — the two fighters stand center-ground,
+// same framing a movie fight scene or a real 2D fighting game uses, not a
+// single-point architectural perspective shot. THEME_PALETTES (arenas.js)
+// still drives the procedural layers (and is the fallback look for the
+// brief moment before an arena's image has loaded). A bright "stage" glow
+// band sits right at the fighters' height so the silhouettes stay readable
+// no matter how busy or dark the backdrop art gets, and embers drift up
+// through the whole scene for a bit of life.
 function drawArena(ctx, t) {
   const W = PHYSICS.ARENA_WIDTH, H = PHYSICS.ARENA_HEIGHT, GY = PHYSICS.GROUND_Y;
   const cx = W / 2, coreY = GY - 30;
   const theme = (currentArena && THEME_PALETTES[currentArena.theme]) || THEME_PALETTES.Japan;
+  const bg = currentArena && arenaImages[currentArena.id];
 
-  const sky = ctx.createLinearGradient(0, 0, 0, GY);
-  sky.addColorStop(0, theme.sky[0]);
-  sky.addColorStop(0.55, theme.sky[1]);
-  sky.addColorStop(1, theme.sky[2]);
-  ctx.fillStyle = sky;
-  ctx.fillRect(-20, -20, W + 40, H + 40);
+  if (bg && bg.complete && bg.naturalWidth > 0) {
+    // cover-fit: scale so the image fills W×H, cropping whichever axis
+    // overshoots, centered.
+    const scale = Math.max(W / bg.naturalWidth, H / bg.naturalHeight);
+    const dw = bg.naturalWidth * scale, dh = bg.naturalHeight * scale;
+    ctx.drawImage(bg, (W - dw) / 2, (H - dh) / 2, dw, dh);
 
-  // glowing core at the horizon, blended from both fighters' colors
-  const core = ctx.createRadialGradient(cx, coreY, 0, cx, coreY, W * 0.55);
-  core.addColorStop(0, theme.core);
-  core.addColorStop(0.3, hexAlpha(player.profile.color, 0.12));
-  core.addColorStop(0.6, hexAlpha(cpu.profile.color, 0.08));
-  core.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = core;
-  ctx.fillRect(0, 0, W, GY);
+    // a soft dark vignette so the art recedes behind the fighters instead
+    // of competing with them
+    const vig = ctx.createRadialGradient(cx, GY * 0.6, H * 0.25, cx, GY * 0.6, W * 0.75);
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(0,0,0,0.45)");
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    const sky = ctx.createLinearGradient(0, 0, 0, GY);
+    sky.addColorStop(0, theme.sky[0]);
+    sky.addColorStop(0.55, theme.sky[1]);
+    sky.addColorStop(1, theme.sky[2]);
+    ctx.fillStyle = sky;
+    ctx.fillRect(-20, -20, W + 40, H + 40);
 
-  // god-rays, slow drift
+    // glowing core at the horizon, blended from both fighters' colors
+    const core = ctx.createRadialGradient(cx, coreY, 0, cx, coreY, W * 0.55);
+    core.addColorStop(0, theme.core);
+    core.addColorStop(0.3, hexAlpha(player.profile.color, 0.12));
+    core.addColorStop(0.6, hexAlpha(cpu.profile.color, 0.08));
+    core.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = core;
+    ctx.fillRect(0, 0, W, GY);
+
+    // parallax column silhouettes — three depths, back to front, framing
+    // the stage symmetrically rather than receding into it
+    const pillarLayers = [
+      { y0: GY * 0.25, w: 26, gap: 150, offset: 40, alpha: 0.28, jitter: 0 },
+      { y0: GY * 0.42, w: 34, gap: 118, offset: 90, alpha: 0.4, jitter: 10 },
+      { y0: GY * 0.6, w: 44, gap: 96, offset: 10, alpha: 0.6, jitter: 18 },
+    ];
+    for (const layer of pillarLayers) {
+      ctx.fillStyle = `rgba(${theme.pillar},${layer.alpha})`;
+      for (let x = -layer.offset; x < W + layer.w; x += layer.gap) {
+        const h = GY - layer.y0 + Math.sin(x * 0.01) * layer.jitter;
+        ctx.fillRect(x, GY - h, layer.w, h);
+      }
+    }
+  }
+
+  // god-rays, slow drift — layered on top of either backdrop
   ctx.save();
   ctx.globalAlpha = 0.1;
   ctx.fillStyle = "#ffe3b0";
@@ -869,23 +910,8 @@ function drawArena(ctx, t) {
   }
   ctx.restore();
 
-  // parallax column silhouettes — three depths, back to front, framing the
-  // stage symmetrically rather than receding into it
-  const pillarLayers = [
-    { y0: GY * 0.25, w: 26, gap: 150, offset: 40, alpha: 0.28, jitter: 0 },
-    { y0: GY * 0.42, w: 34, gap: 118, offset: 90, alpha: 0.4, jitter: 10 },
-    { y0: GY * 0.6, w: 44, gap: 96, offset: 10, alpha: 0.6, jitter: 18 },
-  ];
-  for (const layer of pillarLayers) {
-    ctx.fillStyle = `rgba(${theme.pillar},${layer.alpha})`;
-    for (let x = -layer.offset; x < W + layer.w; x += layer.gap) {
-      const h = GY - layer.y0 + Math.sin(x * 0.01) * layer.jitter;
-      ctx.fillRect(x, GY - h, layer.w, h);
-    }
-  }
-
   // a guaranteed-bright band right at fighter height, so the silhouettes
-  // never go invisible against a dark sky or dark columns
+  // never go invisible against a dark sky, dark columns, or dark art
   const stage = ctx.createLinearGradient(0, GY - 95, 0, GY + 4);
   stage.addColorStop(0, "rgba(255,230,185,0)");
   stage.addColorStop(0.75, "rgba(255,230,185,0.16)");
@@ -895,9 +921,12 @@ function drawArena(ctx, t) {
 
   drawEmbers(ctx, t, W, GY, theme.ember);
 
-  // ground: dark stone, lit by a thin warm rim at the horizon
-  ctx.fillStyle = theme.ground;
-  ctx.fillRect(0, GY + 2, W, H - GY - 2);
+  // ground rim: a thin warm line at the horizon, lighting the art's own
+  // floor (or, without a loaded image, the flat procedural ground below it)
+  if (!bg) {
+    ctx.fillStyle = theme.ground;
+    ctx.fillRect(0, GY + 2, W, H - GY - 2);
+  }
   const rim = ctx.createLinearGradient(0, GY - 3, 0, GY + 10);
   rim.addColorStop(0, "rgba(0,0,0,0)");
   rim.addColorStop(0.5, theme.rim);
