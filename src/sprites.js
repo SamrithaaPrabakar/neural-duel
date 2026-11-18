@@ -490,17 +490,19 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   const poseKey = poseFor(fighter);
   const flashing = fighter.flashTimer > 0;
 
-  // A pose with real illustrated art uses it once loaded; every other pose
-  // still uses the procedural rig until matching art exists for it — a
-  // deliberate, visible seam for now, not a bug.
+  // A pose with real illustrated art uses it once loaded. There's no
+  // dedicated walk-cycle art, so walking borrows the idle art rather than
+  // dropping to the procedural rig — that rig is only the last-resort
+  // fallback below, for the moment before any art has finished loading.
   const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
   const setKey = SPRITE_SETS[weaponId] ? weaponId : "base";
-  const sprite = poseSprites[setKey][poseKey];
+  const spriteKey = poseKey === "walk" ? "idle" : poseKey;
+  const sprite = poseSprites[setKey][spriteKey];
   if (sprite && sprite.complete && sprite.naturalWidth > 0) {
     const shieldId = fighter.profile ? fighter.profile.shield.id : "buckler";
     const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
     const shieldColor = fighter.profile ? fighter.profile.shieldColor : "#9ad1ff";
-    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity, poseKey, weaponId, shieldId, weaponColor, shieldColor, WEAPON_BAKED_IN[setKey]);
+    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity, spriteKey, weaponId, shieldId, weaponColor, shieldColor, WEAPON_BAKED_IN[setKey]);
     return;
   }
 
