@@ -921,25 +921,13 @@ function drawArena(ctx, t) {
 
   drawEmbers(ctx, t, W, GY, theme.ember);
 
-  // ground rim: a thin warm line at the horizon, lighting the art's own
-  // floor (or, without a loaded image, the flat procedural ground below it)
+  // without a loaded image there's no art floor to stand on, so fall back
+  // to a flat procedural ground fill (no hard horizon line across it — the
+  // art's own floor, or this flat fill, reads as the ground on its own)
   if (!bg) {
     ctx.fillStyle = theme.ground;
     ctx.fillRect(0, GY + 2, W, H - GY - 2);
   }
-  const rim = ctx.createLinearGradient(0, GY - 3, 0, GY + 10);
-  rim.addColorStop(0, "rgba(0,0,0,0)");
-  rim.addColorStop(0.5, theme.rim);
-  rim.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = rim;
-  ctx.fillRect(0, GY - 3, W, 13);
-  ctx.strokeStyle = theme.rim;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, GY + 2);
-  ctx.lineTo(W, GY + 2);
-  ctx.stroke();
-  ctx.lineWidth = 1;
 }
 
 // Small embers/motes drifting upward and fading, purely as a function of

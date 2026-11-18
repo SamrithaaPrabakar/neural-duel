@@ -1,21 +1,21 @@
 // Campaign structure: 30 levels, cycling through the 3 arenas one level at
-// a time (level 1 Greece, 2 China, 3 Japan, 4 Greece, ...) rather than in
+// a time (level 1 China, 2 Japan, 3 Greece, 4 China, ...) rather than in
 // big 10-level blocks. Beating the current highest-unlocked level unlocks
 // the next; progress is persisted (see persistence.js).
 //
 // Each arena's `bg` is a real illustrated backdrop (see main.js's
-// drawArena), layered with a procedural readability band, drifting embers,
-// and a ground rim so the silhouette fighters stay legible in front of it
-// regardless of how busy or dark the art gets. THEME_PALETTES gives the
-// procedural layer its matching color identity, and is also the fallback
-// look for the brief moment before an arena's image has loaded.
+// drawArena), layered with a procedural readability band and drifting
+// embers so the silhouette fighters stay legible in front of it regardless
+// of how busy or dark the art gets. THEME_PALETTES gives the procedural
+// layer its matching color identity, and is also the fallback look for the
+// brief moment before an arena's image has loaded.
 
 export const TOTAL_LEVELS = 30;
 
 export const ARENAS = [
-  { id: "greece", name: "Ruins of Olympus", theme: "Greece", bg: "art/arenas/greece.jpg" },
   { id: "china", name: "Imperial Palace", theme: "China", bg: "art/arenas/china.jpg" },
   { id: "japan", name: "Autumn Shrine", theme: "Japan", bg: "art/arenas/japan.jpg" },
+  { id: "greece", name: "Ruins of Olympus", theme: "Greece", bg: "art/arenas/greece.jpg" },
 ];
 
 export const THEME_PALETTES = {
