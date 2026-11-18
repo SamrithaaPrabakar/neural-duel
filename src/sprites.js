@@ -157,7 +157,7 @@ function drawWeapon(ctx, hand, armAngle, weaponId, fillColor) {
   ctx.strokeStyle = "rgba(0,0,0,0.65)";
   ctx.lineWidth = 1;
 
-  if (weaponId === "blade") {
+  if (weaponId === "blade" || weaponId === "sword") {
     ctx.beginPath();
     ctx.moveTo(-2.5, 6);
     ctx.lineTo(2.5, 6);
@@ -328,11 +328,33 @@ const POSE_SPRITE_SRC = {
   hitstun: "art/fighter/hitstun.png",
   jump: "art/fighter/jump.png",
 };
+
+// The "sword" weapon's art already has its sword+shield drawn in, fully
+// colored, per pose — so this set skips the HAND_ANCHORS weapon/shield
+// overlay entirely (see WEAPON_BAKED_IN below) rather than drawing a second
+// weapon on top of the one already in the illustration.
+const SWORD_POSE_SPRITE_SRC = {
+  idle: "art/fighter/sword/idle.png",
+  attack: "art/fighter/sword/attack.png",
+  heavy: "art/fighter/sword/heavy.png",
+  block: "art/fighter/sword/block.png",
+  special: "art/fighter/sword/special.png",
+  dash: "art/fighter/sword/dash.png",
+  hitstun: "art/fighter/sword/hitstun.png",
+  jump: "art/fighter/sword/jump.png",
+};
+
+const SPRITE_SETS = { base: POSE_SPRITE_SRC, sword: SWORD_POSE_SPRITE_SRC };
+const WEAPON_BAKED_IN = { sword: true };
+
 const poseSprites = {};
-for (const [key, src] of Object.entries(POSE_SPRITE_SRC)) {
-  const img = new Image();
-  img.src = src;
-  poseSprites[key] = img;
+for (const [setKey, srcMap] of Object.entries(SPRITE_SETS)) {
+  poseSprites[setKey] = {};
+  for (const [poseKey, src] of Object.entries(srcMap)) {
+    const img = new Image();
+    img.src = src;
+    poseSprites[setKey][poseKey] = img;
+  }
 }
 
 let rimCanvas = null, rimCtx = null;
@@ -402,7 +424,7 @@ const HAND_ANCHORS = {
   jump:    { front: { x: 529, y: 344, angle: 0.5 },  back: { x: 183, y: 287, angle: 0.3 } },
 };
 
-function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity, poseKey, weaponId, shieldId, weaponColor, shieldColor) {
+function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity, poseKey, weaponId, shieldId, weaponColor, shieldColor, weaponBakedIn) {
   const srcW = img.naturalWidth, srcH = img.naturalHeight;
   const destH = CHAR_H;
   const destW = destH * (srcW / srcH);
@@ -432,8 +454,11 @@ function drawPoseSprite(ctx, fighter, img, flashing, isCpu, glitchIntensity, pos
 
   // Weapon/shield, anchored to this specific sprite's own hand positions —
   // drawn in the same flat body color so they read as part of the
-  // silhouette, same convention as the procedural rig.
-  const anchors = HAND_ANCHORS[poseKey];
+  // silhouette, same convention as the procedural rig. Skipped entirely for
+  // a sprite set (like "sword") whose art already has its weapon/shield
+  // drawn in, colored, at the right spot — overlaying a second one on top
+  // would just double it up.
+  const anchors = weaponBakedIn ? null : HAND_ANCHORS[poseKey];
   if (anchors) {
     const scale = destH / srcH;
     const isBlocking = poseKey === "block";
@@ -468,19 +493,19 @@ export function drawFighterSprite(ctx, fighter, { isCpu = false, glitchIntensity
   // A pose with real illustrated art uses it once loaded; every other pose
   // still uses the procedural rig until matching art exists for it — a
   // deliberate, visible seam for now, not a bug.
-  const sprite = poseSprites[poseKey];
+  const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
+  const setKey = SPRITE_SETS[weaponId] ? weaponId : "base";
+  const sprite = poseSprites[setKey][poseKey];
   if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-    const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
     const shieldId = fighter.profile ? fighter.profile.shield.id : "buckler";
     const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
     const shieldColor = fighter.profile ? fighter.profile.shieldColor : "#9ad1ff";
-    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity, poseKey, weaponId, shieldId, weaponColor, shieldColor);
+    drawPoseSprite(ctx, fighter, sprite, flashing, isCpu, glitchIntensity, poseKey, weaponId, shieldId, weaponColor, shieldColor, WEAPON_BAKED_IN[setKey]);
     return;
   }
 
   const pose = poseKey === "walk" ? POSES[walkPhase === 0 ? "walkA" : "walkB"] : (POSES[poseKey] || POSES.idle);
 
-  const weaponId = fighter.profile ? fighter.profile.weapon.id : "blade";
   const weaponColor = fighter.profile ? fighter.profile.weapon.color : "#ffd23f";
   const shieldId = fighter.profile ? fighter.profile.shield.id : "buckler";
   const shieldColor = fighter.profile ? fighter.profile.shieldColor : "#9ad1ff";

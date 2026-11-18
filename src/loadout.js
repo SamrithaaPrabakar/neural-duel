@@ -22,6 +22,12 @@ export const WEAPONS = {
     heavyDamage: 14, heavyDuration: 440, heavyActive: [200, 300],
     desc: "Short range, very fast. Built for combos.",
   },
+  sword: {
+    id: "sword", name: "Sword", color: "#f4c430",
+    range: 58, lightDamage: 11, lightDuration: 370, lightActive: [120, 210],
+    heavyDamage: 20, heavyDuration: 570, heavyActive: [270, 390],
+    desc: "A knight's blade with its own illustrated shield stance — whichever shield you pick, this one looks the part.",
+  },
 };
 
 export const SHIELDS = {
